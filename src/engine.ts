@@ -230,6 +230,7 @@ export function startDay() {
 // ───────────────────────────── clock ─────────────────────────────
 
 const MS_PER_MIN = 333; // 9am–6pm in ~3 real minutes (weekends run twice as fast)
+const STEP = 5; // game minutes per tick
 let acc = 0;
 let last = 0;
 let running = false;
@@ -254,9 +255,10 @@ function loop(ts: number): boolean {
   if (!S.paused) {
     acc += dt * S.speed;
     const perMin = (day().weekend ? MS_PER_MIN / 2 : MS_PER_MIN) / stressPace();
-    while (acc >= perMin && S.phase === 'day') {
-      acc -= perMin;
-      advance();
+    // The clock moves in 5-minute blocks: same pace overall, a fifth as many re-renders.
+    while (acc >= perMin * STEP && S.phase === 'day') {
+      acc -= perMin * STEP;
+      for (let k = 0; k < STEP && S.phase === 'day'; k++) advance();
     }
   }
   return true;
