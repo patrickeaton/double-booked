@@ -47,6 +47,8 @@ export interface GameState {
   openMail: string | null;
   selected: string | null;
   paused: boolean;
+  /** Pauses you've taken today (the first is free; the rest get more stressful). */
+  pauses: number;
   speed: number;
   banners: Banner[];
   /** Presto shortcuts (kept between days). */
@@ -96,6 +98,7 @@ export const S: GameState = {
   openMail: null,
   selected: null,
   paused: false,
+  pauses: 0,
   speed: 1,
   banners: [],
   shortcuts: [],

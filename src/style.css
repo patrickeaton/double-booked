@@ -707,3 +707,6 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 /* Tablet/desktop: the details sidecar sits inside the calendar pane */
 .is-split .drawer.detail { width: min(46%, 420px); border-radius: 18px 0 0 18px; }
 .is-split .drawer-wrap { border-radius: 18px; overflow: hidden; }
+
+.pause-cost { font-size: 10px; font-weight: 700; margin-left: 3px; opacity: 0.7; }
+.chip-btn.costly { background: #ffe9d6; color: #9a3412; }

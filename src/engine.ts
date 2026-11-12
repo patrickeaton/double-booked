@@ -207,6 +207,7 @@ export function setupDay(i: number) {
   S.banners = [];
   S.toasts = [];
   S.paused = false;
+  S.pauses = 0;
   addMessage({ app: hasApp('mail') ? 'mail' : 'huddle', ...d.memo }, true);
   S.app = 'calendar';
   dirty();
@@ -271,8 +272,19 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+/** Stress for the next pause today: the first is free, then it climbs. */
+export const pauseCost = (n = S.pauses + 1) => [0, 0, 3, 6, 10, 15][n] ?? 20;
+
 export function togglePause() {
-  S.paused = !S.paused;
+  if (S.paused) {
+    S.paused = false; // resuming is always free
+    return dirty();
+  }
+  S.pauses++;
+  const cost = pauseCost(S.pauses);
+  S.paused = true;
+  if (cost) applyEffects({ stress: cost }, `Paused again (${S.pauses}× today). Everyone is still waiting.`);
+  banner('calendar', S.pauses === 1 ? '⏸ Paused' : '⏸ Paused again', S.pauses === 1 ? 'Your one free pause today. The next one costs stress.' : `+${cost} stress. Next pause: +${pauseCost()}.`);
   dirty();
 }
 
