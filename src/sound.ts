@@ -21,7 +21,7 @@ function unlock() {
     if (!AC) return;
     ctx = new AC();
     master = ctx.createGain();
-    master.gain.value = 0.35;
+    master.gain.value = 0.2;
     master.connect(ctx.destination);
   }
   if (ctx.state === 'suspended') void ctx.resume();
