@@ -248,7 +248,6 @@ function renderStatus() {
       })(),
       waitingPill(),
       S.phase === 'day' && !S.paused && h('button', { class: 'chip-btn', onclick: toggleSpeed, title: 'Speed' }, `${S.speed}×`),
-      S.phase === 'day' && S.paused && h('button', { class: 'chip-btn resume', onclick: resume, title: 'The day paused while you were away' }, '▶ Resume'),
     ),
   );
 }
@@ -1499,10 +1498,21 @@ function renderOverlay(): HTMLElement | null {
   if (S.phase === 'review') return renderReview();
   if (S.phase === 'over') return renderOver();
   if (S.phase === 'end') return renderEnd();
+  if (S.phase === 'day' && S.paused) return renderPaused();
   if (S.call) return renderCall();
   if (calSheet) return renderCalSheet();
   if (S.sheet) return renderSheet();
   return null;
+}
+
+/** The day stopped while you were away. Tap anywhere to pick it back up. */
+function renderPaused() {
+  return h('div', { class: 'paused-cover', role: 'button', 'aria-label': 'Resume', onclick: resume },
+    h('div', { class: 'paused-card' },
+      h('div', { class: 'paused-icon' }, '⏸'),
+      h('b', {}, 'Paused while you were away'),
+      h('span', {}, `${fmt(S.now)} · everyone is frozen mid-sentence`),
+      h('small', {}, 'Tap anywhere to pick it back up')));
 }
 
 function renderTitle() {
