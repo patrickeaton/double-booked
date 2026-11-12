@@ -440,7 +440,7 @@ function makeDraggable(el: HTMLElement, id: string, isBlock: boolean) {
 
     const move = (m: PointerEvent) => {
       if (!ghost && Math.hypot(m.clientX - sx, m.clientY - sy) > 7 && (isBlock || split.matches || Math.abs(m.clientY - sy) > Math.abs(m.clientX - sx))) {
-        ghost = h('div', { class: 'ghost', style: `--c:${EXECS[ev.attendees[0]].color};height:${Math.max(18, ev.duration * PX)}px` }, h('b', {}, ev.title), h('span', { class: 'ghost-time' }));
+        ghost = h('div', { class: 'drag-ghost', style: `--c:${EXECS[ev.attendees[0]].color};height:${Math.max(18, ev.duration * PX)}px` }, h('b', {}, ev.title), h('span', { class: 'ghost-time' }));
         document.body.append(ghost);
         document.body.classList.add('dragging');
       }

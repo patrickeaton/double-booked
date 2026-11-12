@@ -204,7 +204,7 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .evt.fresh { animation: wiggle 0.6s 3; }
 @keyframes running { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 40%, transparent); } }
 
-.ghost { position: fixed; left: 0; top: 0; z-index: 1000; pointer-events: none; border-radius: 8px; background: color-mix(in srgb, var(--c) 30%, white);  padding: 4px 7px; font-size: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25); display: flex; flex-direction: column; opacity: 0.95; }
+.drag-ghost { position: fixed; left: 0; top: 0; z-index: 1000; pointer-events: none; border-radius: 8px; background: color-mix(in srgb, var(--c) 30%, white);  padding: 4px 7px; font-size: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25); display: flex; flex-direction: column; opacity: 0.95; }
 .ghost-time { font-weight: 800; color: var(--ink); }
 body.dragging, body.dragging * { cursor: grabbing !important; }
 
@@ -334,9 +334,9 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 }
 
 /* ───────── colour stripes: a clipped bar instead of a border, so rounded corners stay clean ───────── */
-.evt, .req, .ghost, .dossier { overflow: hidden; padding-left: 10px; }
+.evt, .req, .drag-ghost, .dossier { overflow: hidden; padding-left: 10px; }
 .req, .dossier { position: relative; }
-.evt::before, .req::before, .ghost::before, .dossier::before {
+.evt::before, .req::before, .drag-ghost::before, .dossier::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c);
 }
 .evt.st-missed::before { background: var(--bad); }
