@@ -46,6 +46,8 @@ export interface GameState {
   shortcuts: Shortcut[];
   /** Seeds the ad-hoc pool, so a retried day plays the same. */
   seed: number;
+  /** Drinks saved in Brew for one-tap reorders (kept between days). */
+  savedDrinks: string[];
   /** Past Day 14: generated days, no ending. */
   endless: boolean;
   toasts: Toast[];
@@ -84,6 +86,7 @@ export const S: GameState = {
   banners: [],
   shortcuts: [],
   seed: 1,
+  savedDrinks: [],
   endless: false,
   toasts: [],
   sheet: null,
@@ -153,11 +156,11 @@ export function addStrike(note: string) {
 
 // ───────────── save / load ─────────────
 const KEY = 'double-booked-save-v1';
-export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[]; shortcuts?: Shortcut[]; seed?: number; endless?: boolean }
+export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[]; shortcuts?: Shortcut[]; seed?: number; endless?: boolean; savedDrinks?: string[] }
 
 export function writeSave() {
   try {
-    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming, shortcuts: S.shortcuts, seed: S.seed, endless: S.endless };
+    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming, shortcuts: S.shortcuts, seed: S.seed, endless: S.endless, savedDrinks: S.savedDrinks };
     localStorage.setItem(KEY, JSON.stringify(s));
   } catch {
     /* storage may be unavailable */

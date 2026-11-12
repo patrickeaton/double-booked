@@ -1,5 +1,6 @@
 // Presto: one-tap shortcuts you set up ahead of time, then fire from a banner when the moment comes.
-import { DRINKS, EXECS, PRODUCTS } from './data';
+import { EXECS, PRODUCTS } from './data';
+import { drinkEmoji, drinkName } from './drinks';
 import { buyProduct, findEvent, hasApp, orderDrink, rideStale, rideUnneeded, toggleAddon, travelOf } from './engine';
 import { S, banner, dirty, uid } from './state';
 import type { ExecId, Shortcut } from './types';
@@ -19,8 +20,7 @@ export function removeShortcut(id: string) {
 
 export function shortcutLabel(sc: Shortcut): string {
   if (sc.kind === 'coffee') {
-    const d = DRINKS.find((x) => x.id === sc.drink)!;
-    return `${d.emoji} ${d.name} → ${EXECS[sc.to].short}`;
+    return `${drinkEmoji(sc.drink)} ${drinkName(sc.drink)} → ${EXECS[sc.to].short}`;
   }
   if (sc.kind === 'gift') {
     const p = PRODUCTS.find((x) => x.id === sc.product)!;

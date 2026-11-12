@@ -1,8 +1,9 @@
 import { DAYS, dayAt } from './days';
-import { CAL_END, CAL_START, DAY_END, DRINKS, EXECS, PAYROLL, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, TABLE_TIMES, fmt } from './data';
+import { STEP_LABEL, drinkEmoji, drinkName, drinkPrice, optionsFor, specString, stepsFor, type DrinkSpec, type Step } from './drinks';
+import { CAL_END, CAL_START, DAY_END, EXECS, PAYROLL, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, TABLE_TIMES, fmt } from './data';
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
-  minStart, newGame, nextDay, hasApp, isNewApp, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
+  minStart, newGame, nextDay, hasApp, isNewApp, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
   toggleSpeed, unschedule,
 } from './engine';
 import { MAX_SHORTCUTS, addShortcut, removeShortcut, runShortcut, shortcutLabel } from './shortcuts';
@@ -590,6 +591,60 @@ function renderFeed(app: InboxApp, title: string, sub: string) {
   );
 }
 
+
+// Drink builder state: what's been picked so far, and which step is showing.
+let bSpec: Partial<DrinkSpec> = {};
+let bStep: Step | 'done' = 'base';
+
+function pickOpt(step: Step, id: string) {
+  bSpec = { ...bSpec, [step]: id };
+  if (step === 'base') {
+    // A new base resets the details: the options differ between drinks.
+    bSpec = { base: id };
+  }
+  const steps = stepsFor(bSpec.base!);
+  const next = steps.find((st) => bSpec[st] === undefined);
+  bStep = next ?? 'done';
+  dirty();
+}
+
+function builtSpec(): string | null {
+  if (!bSpec.base) return null;
+  const steps = stepsFor(bSpec.base);
+  if (steps.some((st) => bSpec[st] === undefined)) return null;
+  return specString({ base: bSpec.base, milk: bSpec.milk ?? 'none', temp: bSpec.temp ?? 'hot', shots: bSpec.shots ?? 'single', sweet: bSpec.sweet ?? 'none' });
+}
+
+function renderBuilder() {
+  const steps = stepsFor(bSpec.base ?? 'latte');
+  const done = builtSpec();
+  const crumb = (st: Step) => {
+    const v = bSpec[st];
+    const o = v ? optionsFor(st, bSpec.base ?? 'latte').find((x) => x.id === v) : null;
+    return h('button', { class: `crumb ${bStep === st ? 'on' : ''} ${v ? 'set' : ''}`, disabled: !v && bStep !== st, onclick: () => { bStep = st; dirty(); } },
+      h('small', {}, STEP_LABEL[st]), h('span', {}, o ? `${o.emoji ?? ''} ${o.name}` : '—'));
+  };
+  const QUESTION: Record<Step, string> = { base: 'What are we making?', milk: 'Milk?', temp: 'How hot?', shots: 'How many shots?', sweet: 'Anything sweet?' };
+  return h('div', { class: 'builder' },
+    h('div', { class: 'crumbs' }, ...(bSpec.base ? steps : (['base'] as Step[])).map(crumb)),
+    bStep !== 'done'
+      ? h('div', {},
+          h('div', { class: 'builder-q' }, QUESTION[bStep]),
+          h('div', { class: 'opt-grid' }, ...optionsFor(bStep, bSpec.base ?? 'latte').map((o) =>
+            h('button', { class: `opt ${bSpec[bStep as Step] === o.id ? 'on' : ''}`, onclick: () => pickOpt(bStep as Step, o.id) },
+              h('span', { class: 'opt-emoji' }, o.emoji ?? ''), h('b', {}, o.name),
+              o.price ? h('span', { class: 'muted small' }, `${bStep === 'base' ? '' : '+'}$${o.price}`) : null))))
+      : done && h('div', { class: 'built' },
+          h('div', { class: 'built-name' }, h('span', { class: 'opt-emoji' }, drinkEmoji(done)), h('b', {}, drinkName(done))),
+          h('div', { class: 'built-actions' },
+            h('button', { class: 'btn primary', onclick: () => orderDrink(done, brewFor, brewAt) }, `Order · $${drinkPrice(done)}`),
+            h('button', { class: `btn ${S.savedDrinks.includes(done) ? 'saved' : ''}`, onclick: () => toggleSavedDrink(done) }, S.savedDrinks.includes(done) ? '★ Saved' : '☆ Save'),
+            h('button', { class: 'btn ghost', onclick: () => { bSpec = {}; bStep = 'base'; dirty(); } }, 'New drink'),
+          ),
+        ),
+  );
+}
+
 let brewFor: string = 'margo';
 let brewAt: number | null = null; // null = ASAP
 
@@ -605,7 +660,7 @@ function renderBrew() {
         ...[...execs, 'me'].map((x) => h('button', { class: `seg-btn ${brewFor === x ? 'on' : ''}`, onclick: () => { brewFor = x; dirty(); } },
           x === 'me' ? '🙋 Me' : `${EXECS[x as ExecId].emoji} ${EXECS[x as ExecId].short}`)),
       ),
-      brewFor !== 'me' && h('p', { class: 'muted small hintline' }, known(brewFor as ExecId) ? `📝 Notes say: ${DRINKS.find((d) => d.id === EXECS[brewFor as ExecId].drink)!.name}` : '📝 You don\'t know their order yet. Guess?'),
+      brewFor !== 'me' && h('p', { class: 'muted small hintline' }, known(brewFor as ExecId) ? `📝 Notes say: ${drinkName(EXECS[brewFor as ExecId].drink)}` : "📝 You don't know their order yet. Listen for clues… or guess."),
       (() => {
         const min = earliestDelivery();
         if (brewAt !== null && brewAt < min) brewAt = null;
@@ -622,12 +677,18 @@ function renderBrew() {
           h('button', { class: 'btn', onclick: () => step(15) }, '+15'),
         );
       })(),
-      h('div', { class: 'drink-grid' },
-        ...DRINKS.map((d) => h('button', { class: 'drink', onclick: () => orderDrink(d.id, brewFor, brewAt) },
-          h('span', { class: 'drink-emoji' }, d.emoji), h('b', {}, d.name), h('span', { class: 'muted small' }, `$${d.price}`)))),
+      S.savedDrinks.length > 0 && h('h4', {}, '★ Saved orders'),
+      ...S.savedDrinks.map((sp) => h('div', { class: 'saved-drink' },
+        h('span', { class: 'opt-emoji' }, drinkEmoji(sp)),
+        h('span', { class: 'saved-name' }, drinkName(sp)),
+        h('button', { class: 'btn primary', onclick: () => orderDrink(sp, brewFor, brewAt) }, `Order $${drinkPrice(sp)}`),
+        h('button', { class: 'btn', title: 'Remove', onclick: () => toggleSavedDrink(sp) }, '✕'),
+      )),
+      h('h4', {}, 'Build a drink'),
+      renderBuilder(),
       orders.length > 0 && h('h4', {}, 'Orders'),
       ...orders.map((o) => h('div', { class: 'order-row' },
-        h('span', {}, `${DRINKS.find((d) => d.id === o.item)?.emoji} ${o.label}`),
+        h('span', {}, `${drinkEmoji(o.item)} ${o.label}`),
         h('span', { class: 'muted small' }, `→ ${o.to === 'me' ? 'you' : EXECS[o.to as ExecId].short} · ${o.arrived ? 'delivered' : `arrives ${fmt(o.arriveAt)}`}`))),
     ),
   );
@@ -687,7 +748,7 @@ function renderNotes() {
         const e = EXECS[x];
         return h('div', { class: 'dossier', style: `--c:${e.color}` },
           h('div', { class: 'dossier-head' }, h('span', { class: 'avatar' }, e.emoji), h('div', {}, h('b', {}, e.name), h('div', { class: 'muted small' }, e.title))),
-          h('div', { class: 'small' }, '☕ ', S.flags.includes(`drink-${x}`) ? DRINKS.find((dr) => dr.id === e.drink)!.name : '??? (listen for clues)'),
+          h('div', { class: 'small' }, '☕ ', S.flags.includes(`drink-${x}`) ? drinkName(e.drink) : '??? (listen for clues)'),
           ...e.quirks.map((q) => h('div', { class: 'small' }, '• ', q)),
         );
       }),
@@ -735,7 +796,7 @@ function renderTably() {
 
 let pfKind: 'coffee' | 'gift' | 'rides' = 'coffee';
 let pfTo: ExecId = 'theo';
-let pfDrink = 'black';
+let pfDrink = '';
 let pfProduct = '';
 let pfPay: 'company' | 'me' = 'company';
 
@@ -761,8 +822,15 @@ function renderPresto() {
       pfKind === 'coffee' && h('div', { class: 'sc-build' },
         h('div', { class: 'seg' }, ...(Object.keys(EXECS) as ExecId[]).filter((x) => DAYS.slice(0, S.dayIndex + 1).some((d) => d.execs.includes(x)) || S.endless).map((x) =>
           h('button', { class: `seg-btn ${pfTo === x ? 'on' : ''}`, onclick: () => { pfTo = x; dirty(); } }, `${EXECS[x].emoji} ${EXECS[x].short}`))),
-        h('div', { class: 'slots' }, ...DRINKS.map((d) => h('button', { class: `slot ${pfDrink === d.id ? 'mine' : ''}`, onclick: () => { pfDrink = d.id; dirty(); } }, `${d.emoji} ${d.name}`))),
-        h('p', { class: 'muted small' }, S.flags.includes(`drink-${pfTo}`) ? `📝 Notes say ${EXECS[pfTo].short} drinks: ${DRINKS.find((d) => d.id === EXECS[pfTo].drink)!.name}` : `📝 You don't know ${EXECS[pfTo].short}'s order yet.`),
+        (() => {
+          const usual = S.flags.includes(`drink-${pfTo}`) ? EXECS[pfTo].drink : null;
+          const choices = [...new Set([...(usual ? [usual] : []), ...S.savedDrinks])];
+          if (pfDrink && !choices.includes(pfDrink)) pfDrink = '';
+          return choices.length
+            ? h('div', { class: 'slots' }, ...choices.map((sp) => h('button', { class: `slot ${pfDrink === sp ? 'mine' : ''}`, onclick: () => { pfDrink = sp; dirty(); } }, `${drinkEmoji(sp)} ${drinkName(sp)}${sp === usual ? ' (their usual)' : ''}`)))
+            : h('p', { class: 'muted small' }, '☆ Save a drink in Brew first, then make it a shortcut here.');
+        })(),
+        h('p', { class: 'muted small' }, S.flags.includes(`drink-${pfTo}`) ? `📝 Notes say ${EXECS[pfTo].short} drinks: ${drinkName(EXECS[pfTo].drink)}` : `📝 You don't know ${EXECS[pfTo].short}'s order yet.`),
       ),
       pfKind === 'gift' && h('div', { class: 'sc-build' },
         h('div', { class: 'slots' }, ...gifts.map((p) => h('button', { class: `slot ${pfProduct === p.id ? 'mine' : ''}`, onclick: () => { pfProduct = p.id; dirty(); } }, `${p.emoji} ${p.name} $${p.price}`))),
@@ -770,7 +838,7 @@ function renderPresto() {
         h('p', { class: 'muted small' }, 'Sends to whoever is waiting on a gift.'),
       ),
       pfKind === 'rides' && h('p', { class: 'muted small sc-build' }, 'Books any missing rides, re-routes ones going to an old address, and cancels rides for meetings that went remote.'),
-      h('button', { class: 'btn primary wide', disabled: full || dupe, onclick: () => addShortcut(draft) }, full ? 'All slots used' : dupe ? 'Already saved' : `Save: ${shortcutLabel(draft)}`),
+      h('button', { class: 'btn primary wide', disabled: full || dupe || (pfKind === 'coffee' && !pfDrink), onclick: () => addShortcut(draft) }, full ? 'All slots used' : dupe ? 'Already saved' : pfKind === 'coffee' && !pfDrink ? 'Pick a drink' : `Save: ${shortcutLabel(draft)}`),
     ),
   );
 }

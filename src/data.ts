@@ -1,4 +1,4 @@
-import type { Drink, Exec, ExecId, Product, Restaurant, Rule } from './types';
+import type { Exec, ExecId, Product, Restaurant, Rule } from './types';
 
 export const t = (s: string): number => {
   const [h, m] = s.split(':').map(Number);
@@ -27,7 +27,7 @@ export const EXECS: Record<ExecId, Exec> = {
     title: 'Founder & CEO',
     color: '#ff7a59',
     emoji: '🌱',
-    drink: 'oat-flat-white',
+    drink: 'flatwhite|oat|extrahot|single|none',
     quirks: [
       'Not a morning person. Nothing before 10am except standup.',
       'Says yes to everything in person. Blames you later.',
@@ -41,7 +41,7 @@ export const EXECS: Record<ExecId, Exec> = {
     title: 'CTO',
     color: '#4f7cff',
     emoji: '🛠️',
-    drink: 'black',
+    drink: 'drip|none|hot|single|none',
     quirks: [
       '1–5pm is focus time. Sacred. Do not touch.',
       'Forgets to eat. Lunch before 1pm or never.',
@@ -50,14 +50,6 @@ export const EXECS: Record<ExecId, Exec> = {
   },
 };
 
-export const DRINKS: Drink[] = [
-  { id: 'oat-flat-white', name: 'Oat Flat White, extra hot', emoji: '☕', price: 6 },
-  { id: 'oat-latte', name: 'Oat Latte', emoji: '🥛', price: 6 },
-  { id: 'black', name: 'Black Coffee', emoji: '⚫', price: 4 },
-  { id: 'matcha', name: 'Matcha Latte', emoji: '🍵', price: 7 },
-  { id: 'cortado', name: 'Cortado', emoji: '🤎', price: 5 },
-  { id: 'mocha', name: 'Triple Mocha w/ Whip', emoji: '🍫', price: 8 },
-];
 
 export const PRODUCTS: Product[] = [
   { id: 'mug', name: 'Branded Sproutly Mug', emoji: '☕', price: 12, desc: '"Talk to your plants." Ships in a box with more logo.', tier: 'cheap' },

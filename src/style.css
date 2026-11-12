@@ -395,3 +395,23 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .back-head h2 { text-align: center; }
 .back-btn { justify-self: start; display: inline-flex; align-items: center; gap: 6px; color: #3d8bff; font-weight: 700; font-size: 16px; padding: 6px 4px; }
 .back-count { background: #3d8bff; color: #fff; border-radius: 99px; font-size: 11px; font-weight: 800; padding: 1px 7px; min-width: 18px; text-align: center; }
+
+/* Brew drink builder */
+.builder { background: var(--card); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+.crumbs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.crumbs::-webkit-scrollbar { display: none; }
+.crumb { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-start; background: #f1eee6; border-radius: 10px; padding: 5px 9px; font-size: 12px; font-weight: 700; border: 2px solid transparent; }
+.crumb small { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.crumb.on { border-color: #a86b3c; background: #fff7ee; }
+.crumb:disabled { opacity: 0.4; }
+.builder-q { font-weight: 800; font-size: 15px; margin-bottom: 8px; }
+.opt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.opt { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 6px; background: #f6f3ec; border-radius: 12px; font-size: 13px; border: 2px solid transparent; }
+.opt.on { border-color: #a86b3c; }
+.opt-emoji { font-size: 22px; }
+.built { display: flex; flex-direction: column; gap: 10px; }
+.built-name { display: flex; align-items: center; gap: 10px; font-size: 16px; }
+.built-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn.saved { background: #ffd166; }
+.saved-drink { display: flex; align-items: center; gap: 8px; background: #fff7ee; border-radius: 12px; padding: 8px 10px; margin-bottom: 6px; }
+.saved-name { flex: 1; font-weight: 700; font-size: 13px; }

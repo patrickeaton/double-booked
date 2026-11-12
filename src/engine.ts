@@ -1,5 +1,6 @@
 import { DAYS, dayAt } from './days';
-import { CAL_START, DAY_END, DAY_START, DRINKS, EXECS, PAYROLL, PREP_TIME, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, fmt } from './data';
+import { drinkEmoji, drinkMatch, drinkName, drinkPrice } from './drinks';
+import { CAL_START, DAY_END, DAY_START, EXECS, PAYROLL, PREP_TIME, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, fmt } from './data';
 import {
   S, START_METERS, addStrike, applyEffects, banner, dirty, fmtMoney, readSave, uid, writeSave, clearSave,
 } from './state';
@@ -46,6 +47,7 @@ export function newGame() {
   S.shortcuts = [];
   S.seed = Math.floor(Math.random() * 1e9);
   S.endless = false;
+  S.savedDrinks = [];
   setupDay(0);
 }
 
@@ -61,6 +63,7 @@ export function continueGame() {
   S.shortcuts = save.shortcuts ?? [];
   S.seed = save.seed ?? 1;
   S.endless = save.endless ?? false;
+  S.savedDrinks = save.savedDrinks ?? [];
   S.carry = [];
   setupDay(save.dayIndex);
 }
@@ -387,8 +390,12 @@ function startEvent(e: CalEvent) {
     const who = e.attendees[0];
     const got = S.orders.filter((o) => o.app === 'brew' && o.to === who && o.arrived && o.arriveAt >= now - 90).pop();
     if (!got) applyEffects({ standing: -3 }, `No coffee before ${e.title}.`);
-    else if (got.item !== EXECS[who].drink) applyEffects({ standing: -4 }, `Wrong coffee before ${e.title}. ${EXECS[who].short} stares at it.`);
-    else applyEffects({ standing: 2 }, `Perfect coffee before ${e.title}.`);
+    else {
+      const m = drinkMatch(got.item, EXECS[who].drink);
+      if (m === 'perfect') applyEffects({ standing: 2 }, `Perfect coffee before ${e.title}.`);
+      else if (m === 'close') applyEffects({}, `Close-enough coffee before ${e.title}. ${EXECS[who].short} noticed.`);
+      else applyEffects({ standing: -4 }, `Wrong coffee before ${e.title}. ${EXECS[who].short} stares at it.`);
+    }
   }
   e.planned = e.duration;
   if (e.overrun) {
@@ -757,16 +764,22 @@ const spend = (label: string, amount: number) => {
 
 export const earliestDelivery = () => (S.phase === 'day' ? S.now + 15 : DAY_START);
 
-export function orderDrink(drinkId: string, to: string, deliverAt?: number | null) {
-  const d = DRINKS.find((x) => x.id === drinkId)!;
+export function orderDrink(spec: string, to: string, deliverAt?: number | null) {
+  const name = drinkName(spec);
+  const price = drinkPrice(spec);
   const at = Math.max(earliestDelivery(), deliverAt ?? 0);
-  S.orders.push({ id: `o${uid()}`, app: 'brew', item: d.id, label: d.name, to, price: d.price, arriveAt: at, arrived: false, paidBy: to === 'me' ? 'me' : 'company' });
+  S.orders.push({ id: `o${uid()}`, app: 'brew', item: spec, label: name, to, price, arriveAt: at, arrived: false, paidBy: to === 'me' ? 'me' : 'company' });
   if (to !== 'me') {
-    S.meters.runway -= d.price;
-    spend(`Brew · ${d.name}`, d.price);
+    S.meters.runway -= price;
+    spend(`Brew · ${name}`, price);
   }
   const who = to === 'me' ? 'you' : EXECS[to as ExecId].short;
-  banner('brew', '☕ Order placed', `${d.name} for ${who}. Arrives ${fmt(at)}.`);
+  banner('brew', `${drinkEmoji(spec)} Order placed`, `${name} for ${who}. Arrives ${fmt(at)}.`);
+}
+
+export function toggleSavedDrink(spec: string) {
+  S.savedDrinks = S.savedDrinks.includes(spec) ? S.savedDrinks.filter((x) => x !== spec) : [...S.savedDrinks, spec];
+  dirty();
 }
 
 export function buyProduct(productId: string, to: string, pay: 'company' | 'me') {
@@ -797,6 +810,8 @@ export function buyProduct(productId: string, to: string, pay: 'company' | 'me')
   banner('bundl', '📦 Order placed', `${p.name} → ${to === 'me' ? 'you' : to}`);
 }
 
+const halve = (e: Effects): Effects => Object.fromEntries(Object.entries(e).map(([k, v]) => [k, Math.round((v as number) / 2)]));
+
 function deliver(o: (typeof S.orders)[number]) {
   o.arrived = true;
   if (o.app === 'brew') {
@@ -808,9 +823,11 @@ function deliver(o: (typeof S.orders)[number]) {
     banner('brew', '☕ Delivered', `${o.label} → ${EXECS[exec].short}`);
     const task = S.tasks.find((x) => x.status === 'open' && x.kind === 'coffee' && x.exec === exec);
     if (task) {
-      task.status = o.item === EXECS[exec].drink ? 'done' : 'failed';
-      if (task.status === 'done') applyEffects(task.reward, `${EXECS[exec].short} got their coffee.`);
-      else applyEffects({ morale: -2 }, `${EXECS[exec].short} got the wrong coffee.`);
+      const m = drinkMatch(o.item, EXECS[exec].drink);
+      task.status = m === 'wrong' ? 'failed' : 'done';
+      if (m === 'perfect') applyEffects(task.reward, `${EXECS[exec].short} got their coffee. Exactly right.`);
+      else if (m === 'close') applyEffects(halve(task.reward), `${EXECS[exec].short} got a coffee that was… close. "${o.label}?"`);
+      else applyEffects({ morale: -2, standing: -1 }, `${EXECS[exec].short} got the wrong coffee (${o.label}). They are holding it at arm's length.`);
     }
   }
 }
