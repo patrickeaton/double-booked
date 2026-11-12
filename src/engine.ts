@@ -123,7 +123,7 @@ export function togglePause() {
 }
 
 export function toggleSpeed() {
-  S.speed = S.speed === 1 ? 2 : S.speed === 2 ? 0.5 : 1;
+  S.speed = S.speed === 1 ? 2 : 1;
   dirty();
 }
 
