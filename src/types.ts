@@ -83,6 +83,8 @@ export interface CalEvent {
   dueDay?: number;
   /** A copy of a meeting that got missed, back in the tray to be rebooked. */
   rescheduled?: boolean;
+  /** Everyone originally on the invite (set the first time you take someone off). */
+  invited?: ExecId[];
 }
 
 export type EventDef = Omit<CalEvent, 'status'>;

@@ -433,6 +433,10 @@ function startEvent(e: CalEvent) {
     return;
   }
   const now = S.now;
+  for (const x of skippedFrom(e)) {
+    const team = e.fixed || e.attendees.includes('team');
+    applyEffects(team ? { morale: -2 } : { standing: -2 }, team ? `${EXECS[x].short} skipped ${e.title}. People noticed.` : `${EXECS[x].short} wasn't in ${e.title}. The others noticed.`);
+  }
   if (!e.force && !e.departed) {
     const clash = S.events.find((o) => o !== e && shares(o, e) && occupying(o, now));
     if (clash) {
@@ -493,6 +497,12 @@ function startEvent(e: CalEvent) {
 
 function finishEvent(e: CalEvent) {
   e.status = 'done';
+  if (e.kind === 'focus') {
+    // Did anything actually cut into the block?
+    const broke = S.events.some((o) => o !== e && blocks(o) && shares(o, e) && (o.status === 'done' || o.status === 'running') && o.start !== null && overlaps(o.start, end(o), e.start!, end(e)));
+    if (!broke) applyEffects({ standing: 2, morale: 2 }, `${execNames(e.attendees)}'s ${e.title.replace(/ 🔒$/, '').toLowerCase()} went uninterrupted. Something shipped.`);
+    return;
+  }
   const booked = e.planned ?? e.duration;
   const ok = e.minOk ?? e.baseDuration ?? booked;
   const remoteMeh = e.remote && e.remoteOk === 'meh';
@@ -1077,6 +1087,25 @@ function chargeAddons(e: CalEvent) {
 
 const editable = (e: CalEvent) => !e.fixed && e.kind !== 'focus' && e.kind !== 'personal' && (e.status === 'pending' || e.status === 'scheduled');
 export const canAddons = editable;
+
+/** People you took off the invite. */
+export const skippedFrom = (e: CalEvent): ExecId[] => (e.invited ?? []).filter((x) => !e.attendees.includes(x));
+/** Who can be taken off (or put back): anyone but the company calendar, while it hasn't started. */
+export const canEditAttendees = (e: CalEvent) =>
+  (e.status === 'scheduled' || e.status === 'pending') && !e.departed && (e.invited ?? e.attendees).filter((x) => x !== 'team').length > 1;
+
+export function toggleAttendee(id: string, x: ExecId) {
+  const e = findEvent(id);
+  if (!e || !canEditAttendees(e) || x === 'team') return;
+  e.invited ??= [...e.attendees];
+  if (e.attendees.includes(x)) {
+    if (e.attendees.filter((a) => a !== 'team').length <= 1) return; // someone has to go
+    e.attendees = e.attendees.filter((a) => a !== x);
+  } else if (e.invited.includes(x)) {
+    e.attendees = e.invited.filter((a) => a === x || e.attendees.includes(a));
+  }
+  dirty();
+}
 
 export function toggleAddon(id: string, which: 'coffee' | 'catering' | 'remote' | 'ride') {
   const e = findEvent(id);

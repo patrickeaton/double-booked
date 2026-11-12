@@ -4,7 +4,7 @@ import { CAL_END, CAL_START, DAY_END, DAY_START, EXECS, isBoss, PAYROLL, PRODUCT
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
   minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
-  toggleSpeed, unschedule, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
+  toggleSpeed, unschedule, toggleAttendee, canEditAttendees, skippedFrom, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
 } from './engine';
 import { avatarEl } from './avatars';
 import { coffeeOf, metPeople, statusOf } from './people';
@@ -450,10 +450,9 @@ function renderCalendar() {
           h('div', { class: 'drawer-head' }, h('b', {}, sel.status === 'pending' ? 'Book it' : 'Details'),
             h('button', { class: 'win-btn', onclick: () => select(null) }, '✕')),
           h('div', { class: 'drawer-cards', 'data-keep': 'detail' },
-            ahead ? renderAheadSelection(sel, ahead.day) : renderSelection(sel),
+            ahead ? renderAheadSelection(sel, ahead.day) : renderDetails(sel),
             (sel.status === 'pending' || (sel.status === 'scheduled' && !sel.fixed)) &&
-              h('button', { class: 'btn big pick-time', onclick: () => { detailOpen = false; dirty(); } }, '👆 Pick a time on the calendar'),
-            h('p', { class: 'muted small' }, 'Or drag it on the calendar. This panel gets out of the way.'))))
+              h('button', { class: 'btn big pick-time', onclick: () => { detailOpen = false; dirty(); } }, '👆 Pick a time on the calendar'))))
     : null;
   const drawer = !split.matches && drawerOpen
     ? h('div', { class: 'drawer-wrap' },
@@ -637,6 +636,73 @@ function renderOtherBlock(e: CalEvent) {
   return el;
 }
 
+/** Tap to take someone off the invite (or put them back). */
+function attendeeChips(e: CalEvent) {
+  const all = (e.invited ?? e.attendees).filter((x) => x !== 'team');
+  const left = e.attendees.filter((x) => x !== 'team').length;
+  return h('div', { class: 'who-chips' },
+    e.attendees.includes('team') && h('span', { class: 'who-chip on fixed' }, '🌱 Everyone'),
+    ...all.map((x) => {
+      const on = e.attendees.includes(x);
+      return h('button', { class: `who-chip ${on ? 'on' : 'off'}`, disabled: on && left <= 1, onclick: () => toggleAttendee(e.id, x), title: on ? `Take ${EXECS[x].short} off the invite` : `Put ${EXECS[x].short} back` },
+        x === 'me' ? face('me', 20) : face(x, 20), EXECS[x].short, h('span', { class: 'who-x' }, on ? '✕' : '+'));
+    }),
+  );
+}
+
+/** Phone sidecar: the same controls as the bar, laid out as a readable card. */
+function renderDetails(e: CalEvent) {
+  const issues = issuesFor(e);
+  const canAct = e.status === 'pending' || (e.status === 'scheduled' && !e.fixed);
+  const ok = e.minOk ?? e.baseDuration ?? e.duration;
+  const bumpFx = canBump(e) ? bumpPenaltyFor(e) : null;
+  const bumpCost = bumpFx && Object.entries(bumpFx).filter(([, v]) => v).map(([m, v]) => `${METER_ICON[m as Meter]}${m === 'runway' ? fmtMoney(v as number) : v}`).join(' ');
+  const skipped = skippedFrom(e);
+  const row = (label: string, ...kids: Child[]) => h('div', { class: 'd-row' }, h('span', { class: 'd-lbl' }, label), h('div', { class: 'd-ctl' }, ...kids));
+  const status = e.status === 'pending' ? 'Not booked' : e.status === 'running' ? 'Happening now' : e.status === 'scheduled' ? (e.fixed ? 'Fixed' : 'Booked') : e.status[0].toUpperCase() + e.status.slice(1);
+  return h('div', { class: 'details', style: `--c:${EXECS[e.attendees[0]].color}` },
+    h('div', { class: 'd-head' },
+      h('div', { class: 'd-title' }, e.title),
+      h('div', { class: 'd-sub' },
+        h('span', { class: `d-pill st-${e.status}` }, status),
+        e.start !== null ? span2(e.start, e.start + e.duration) : `${e.duration} min`,
+        e.place && !e.remote ? ` · 📍 ${e.place}` : e.remote ? ' · 💻 Remote' : ''),
+      e.note && h('div', { class: 'd-note' }, e.note),
+      issues.length > 0 && h('div', { class: 'req-tags' }, ...issues.map((i) => h('span', { class: `tag ${i.bad ? 'bad' : ''}` }, `${i.icon} ${i.text}`))),
+    ),
+    h('div', { class: 'd-rows' },
+      canAct && row('Starts',
+        e.start !== null && h('button', { class: 'd-step', onclick: () => { nudgeStart(e.id, -15); scrollToEvent(e); } }, '−15'),
+        e.start !== null && h('b', { class: 'd-val' }, fmt(e.start).slice(0, -2), h('small', {}, fmt(e.start).slice(-2))),
+        e.start !== null && h('button', { class: 'd-step', onclick: () => { nudgeStart(e.id, 15); scrollToEvent(e); } }, '+15'),
+        h('button', { class: `d-best ${e.start === null ? 'primary' : ''}`, onclick: () => { autoPlace(e.id); scrollToEvent(e); } }, e.start === null ? '📍 Book best slot' : '📍 Best')),
+      canResize(e) && row('Length',
+        h('button', { class: 'd-step', onclick: () => resizeEvent(e.id, -15), disabled: e.duration <= 15 }, '−15'),
+        h('b', { class: `d-val ${e.duration < ok ? 'short' : ''}` }, `${e.duration}m`),
+        h('button', { class: 'd-step', onclick: () => resizeEvent(e.id, 15) }, '+15'),
+        h('span', { class: 'd-hint' }, e.duration < ok ? 'Cut short: partial credit' : ok < (e.baseDuration ?? e.duration) ? `Fine down to ${ok}m` : '')),
+      canWrap(e) && row('Running', h('span', { class: 'd-hint' }, `Since ${fmt(e.start!)} · ${S.now - e.start!} of ${e.planned ?? e.duration}m`)),
+      row('Who', canEditAttendees(e) ? attendeeChips(e) : h('div', { class: 'who-chips' }, ...e.attendees.map((x) => h('span', { class: 'who-chip on fixed' }, x === 'team' ? '🌱' : face(x, 20), EXECS[x].short)))),
+      skipped.length > 0 && h('div', { class: 'd-warn' }, `Skipping costs ${e.fixed || e.attendees.includes('team') ? '🤝 morale' : '⭐ standing'} when it starts (−2 each).`),
+      canAddons(e) && row('Extras',
+        h('div', { class: 'addons' },
+          h('button', { class: `chip ${e.withCoffee ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'coffee') },
+            `☕ Coffee $${addonCost(e).coffee}`, e.coffee && h('small', {}, S.flags.includes(`drink-${e.attendees[0]}`) ? ' · their usual' : ' · house latte?')),
+          e.catering && h('button', { class: `chip ${e.withCatering ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'catering') }, `🍱 Catering $${addonCost(e).catering}`),
+          e.travel && hasApp('ryde') && (!e.remote || e.withRide) && h('button', { class: `chip ${rideStale(e) || rideUnneeded(e) ? 'warn' : e.withRide ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'ride') },
+            rideUnneeded(e) ? '🚕 Cancel ride (remote now)' : rideStale(e) ? `🚕 Fix ride → ${e.place}` : `🚕 Ride $${RIDE_COST * 2}`),
+          e.remoteOk && h('button', { class: `chip ${e.remote ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'remote') },
+            e.remote ? '💻 Remote' : `🚗 In person · ${e.travel}m each way`, e.remote && e.remoteOk === 'meh' ? h('small', {}, ' · less impact') : null))),
+    ),
+    (canAct || canWrap(e)) && h('div', { class: 'd-actions' },
+      canWrap(e) && h('button', { class: 'd-act danger', onclick: () => wrapUpNow(e.id) }, '✂️ Wrap up now'),
+      e.status === 'scheduled' && !e.fixed && h('button', { class: 'd-act', onclick: () => unschedule(e.id) }, '↩︎ Unbook'),
+      bumpFx && h('button', { class: 'd-act', onclick: () => bumpEvent(e.id) }, '📆 Tomorrow', h('small', {}, bumpCost || 'free')),
+      canAct && h('button', { class: 'd-act danger', onclick: () => declineEvent(e.id) }, 'Decline'),
+    ),
+  );
+}
+
 function renderSelection(e: CalEvent) {
   const issues = issuesFor(e);
   const canAct = e.status === 'pending' || (e.status === 'scheduled' && !e.fixed);
@@ -670,6 +736,7 @@ function renderSelection(e: CalEvent) {
     canWrap(e) && h('div', { class: 'stepper' },
       h('span', { class: 'small muted' }, `Running since ${fmt(e.start!)} · ${S.now - e.start!} of ${e.planned ?? e.duration}m${(e.planned ?? 0) < ok ? '' : ''}`),
     ),
+    canEditAttendees(e) && h('div', { class: 'stepper' }, h('span', { class: 'small muted lbl' }, 'Who'), attendeeChips(e)),
     canAddons(e) && h('div', { class: 'addons' },
       h('button', { class: `chip ${e.withCoffee ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'coffee') },
         `☕ Coffee $${addonCost(e).coffee}`,
