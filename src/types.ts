@@ -116,6 +116,8 @@ export interface Choice {
   log?: string;
   flag?: string;
   then?: Script[];
+  /** Saying yes puts a to-do in Notes: do it in time or let them down. */
+  promise?: { text: string; within: number; reward?: Effects; fail: Effects };
 }
 
 export interface MsgDef {
@@ -162,7 +164,10 @@ export interface TaskDef {
   id: string;
   text: string;
   deadline: number;
-  kind: 'coffee' | 'gift' | 'reservation';
+  kind: 'coffee' | 'gift' | 'reservation' | 'invoice' | 'promise';
+  /** invoice: who gets paid, and how much. */
+  payee?: string;
+  amount?: number;
   /** reservation: party size, acceptable time range, and (optionally) a specific restaurant id. */
   party?: number;
   window?: [number, number];

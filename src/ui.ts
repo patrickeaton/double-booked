@@ -3,7 +3,7 @@ import { STEP_LABEL, drinkEmoji, drinkName, drinkPrice, optionsFor, specString, 
 import { CAL_END, CAL_START, DAY_END, DAY_START, EXECS, isBoss, PAYROLL, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, TABLE_TIMES, fmt } from './data';
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
-  minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, resume, clockGlide,
+  minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, resume, clockGlide, derivedTodos, doPromise, payInvoice, canCater,
   toggleSpeed, scheduleAllTickets, bookAllRequests, unschedule, whereOf, atOffice, placeLabel, padBefore, padAfter, canBuffer, setBuffer, scheduleTicket, ticketBlock, toggleAttendee, canEditAttendees, skippedFrom, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
 } from './engine';
 import { avatarEl } from './avatars';
@@ -383,8 +383,9 @@ function badgeFor(app: AppId): number {
   if (app === 'calendar') return S.events.filter((e) => e.status === 'pending').length;
   if (app === 'mail' || app === 'huddle' || app === 'messages')
     return S.messages.filter((m) => m.app === app && (!m.read || (m.choices && m.chosen === undefined))).length;
-  if (app === 'notes') return S.tasks.filter((t) => t.status === 'open').length;
+  if (app === 'notes') return S.tasks.filter((t) => t.status === 'open').length + derivedTodos().length;
   if (app === 'pulse') return dangerCount();
+  if (app === 'card') return S.tasks.filter((t) => t.kind === 'invoice' && t.status === 'open').length;
   if (app === 'trellis') return S.tickets.filter((t) => t.status === 'open' && !ticketBlock(t.id)).length;
   return 0;
 }
@@ -729,9 +730,6 @@ function whereRow(e: CalEvent) {
           h('button', { class: `seg-btn ${e.remote ? 'on' : ''}`, onclick: () => !e.remote && toggleAddon(e.id, 'remote') }, '💻 Video', e.remoteOk === 'meh' ? h('small', {}, ' · less impact') : null))
       : h('span', { class: 'where-lbl' }, placeLabel(e)),
     off && h('span', { class: 'where-note' }, `${e.travel}m each way`),
-    (off || rideUnneeded(e)) && hasApp('ryde') && can && h('button', { class: `chip ride ${rideStale(e) || rideUnneeded(e) ? 'warn' : e.withRide ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'ride') },
-      rideUnneeded(e) ? '🚕 Cancel ride (it\'s video now)' : rideStale(e) ? `🚕 Fix ride → ${e.place}` : e.withRide ? `🚕 Ryde booked · $${RIDE_COST * 2}` : `🚗 Driving · book a Ryde $${RIDE_COST * 2}?`),
-    off && hasApp('ryde') && !e.withRide && h('span', { class: 'where-note' }, 'In a Ryde they prep on the way.'),
   );
 }
 
@@ -794,11 +792,20 @@ function renderDetails(e: CalEvent) {
       row('Who', canEditAttendees(e) ? attendeeChips(e) : h('div', { class: 'who-chips' }, ...e.attendees.map((x) => h('span', { class: 'who-chip on fixed' }, x === 'team' ? '🌱' : face(x, 20), EXECS[x].short)))),
       skipped.length > 0 && h('div', { class: 'd-warn' }, `Skipping costs ${e.fixed || e.attendees.includes('team') ? '🤝 morale' : '⭐ standing'} when it starts (−2 each).`),
       e.kind !== 'focus' && e.kind !== 'work' && row('Where', whereRow(e)),
-      canAddons(e) && atOffice(e) && row('Extras',
-        h('div', { class: 'addons' },
-          h('button', { class: `chip ${e.withCoffee ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'coffee') },
-            `☕ Coffee $${addonCost(e).coffee}`, e.coffee && h('small', {}, S.flags.includes(`drink-${e.attendees[0]}`) ? ' · their usual' : ' · house latte?')),
-          e.catering && h('button', { class: `chip ${e.withCatering ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'catering') }, `🍱 Catering $${addonCost(e).catering}`))),
+      ((whereOf(e) === 'offsite' && e.kind !== 'work') || rideUnneeded(e)) && row('Ride',
+        !hasApp('ryde') ? h('span', { class: 'd-hint' }, '🚗 They drive. (Ryde unlocks soon: prep on the way.)')
+        : !canAddons(e) ? h('span', { class: 'd-hint' }, e.withRide ? '🚕 Ryde booked' : '🚗 Driving')
+        : rideUnneeded(e) || rideStale(e) ? h('button', { class: 'chip ride warn', onclick: () => toggleAddon(e.id, 'ride') }, rideUnneeded(e) ? '🚕 Cancel ride (it\'s video now)' : `🚕 Fix ride → ${e.place}`)
+        : h('div', { class: 'seg' },
+            h('button', { class: `seg-btn ${e.withRide ? '' : 'on'}`, onclick: () => e.withRide && toggleAddon(e.id, 'ride') }, '🚗 Drive'),
+            h('button', { class: `seg-btn ${e.withRide ? 'on' : ''}`, onclick: () => !e.withRide && toggleAddon(e.id, 'ride') }, `🚕 Ryde $${RIDE_COST * 2}`)),
+        hasApp('ryde') && canAddons(e) && !rideUnneeded(e) && h('span', { class: 'd-hint' }, e.withRide ? 'They prep on the way.' : e.prep ? `Needs ${e.prep}m prep: a Ryde covers it.` : 'In a Ryde they prep on the way.')),
+      canAddons(e) && atOffice(e) && e.kind !== 'work' && row('Coffee',
+        h('button', { class: `chip ${e.withCoffee ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'coffee') }, e.withCoffee ? `☕ Ordered · $${addonCost(e).coffee}` : `☕ Add coffee $${addonCost(e).coffee}`),
+        h('span', { class: 'd-hint' }, e.coffee ? (S.flags.includes(`drink-${e.attendees[0]}`) ? 'Their usual, waiting when they arrive.' : "You don't know their order yet: house latte.") : 'A nice touch.')),
+      canAddons(e) && canCater(e) && e.kind !== 'work' && row('Catering',
+        h('button', { class: `chip ${e.withCatering ? 'on' : e.catering === 'wanted' ? 'want' : ''}`, onclick: () => toggleAddon(e.id, 'catering') }, e.withCatering ? `🍱 Ordered · $${addonCost(e).catering}` : `🍱 Add catering $${addonCost(e).catering}`),
+        h('span', { class: `d-hint ${e.catering === 'wanted' && !e.withCatering ? 'bad' : ''}` }, e.catering === 'wanted' ? (e.withCatering ? 'Expected, and sorted.' : 'Expected. Awkward without it.') : 'Optional: good for morale.')),
     ),
   );
 }
@@ -1324,6 +1331,12 @@ function renderCard$() {
         h('div', { class: 'cc-sub' }, `≈ ${days} days of payroll left`),
         h('div', { class: 'cc-num' }, '•••• •••• •••• 4040'),
       ),
+      ...(() => {
+        const bills = S.tasks.filter((t) => t.kind === 'invoice' && t.status === 'open');
+        return bills.length ? [h('h4', {}, 'Bills due'), ...bills.map((t) => h('div', { class: 'order-row' },
+          h('span', {}, h('b', {}, t.payee), h('div', { class: 'small muted' }, `$${t.amount} · due ${fmt(t.deadline)} · late fee if missed`)),
+          h('button', { class: 'btn primary', onclick: () => payInvoice(t.id) }, `Pay $${t.amount}`)))] : [];
+      })(),
       h('h4', {}, 'Recent'),
       S.ledger.length === 0 ? h('p', { class: 'empty' }, 'No spending yet. Finance is suspicious.') : null,
       ...S.ledger.slice(0, 30).map((l) => h('div', { class: 'order-row' }, h('span', {}, l.label), h('b', { class: l.amount < 0 ? 'neg' : 'pos' }, fmtMoney(l.amount)))),
@@ -1332,17 +1345,18 @@ function renderCard$() {
 }
 
 /** Where each kind of to-do gets done. */
-const TASK_APP: Record<string, AppId> = { coffee: 'brew', gift: 'bundl', reservation: 'tably' };
+const TASK_APP: Record<string, AppId> = { coffee: 'brew', gift: 'bundl', reservation: 'tably', invoice: 'card' };
 
 function renderNotes() {
   const d = day();
   const openTasks = S.tasks.filter((t) => t.status === 'open').sort((a, b) => a.deadline - b.deadline);
   const doneTasks = S.tasks.filter((t) => t.status !== 'open');
+  const derived = derivedTodos();
   return h('div', { class: 'app notes' },
     head('Notes', 'Your survival guide'),
     h('div', { class: 'scroll', 'data-keep': 'notes' },
-      h('h4', {}, 'To-do', openTasks.length > 0 && h('span', { class: 'count' }, openTasks.length)),
-      openTasks.length === 0 ? h('p', { class: 'muted small' }, S.tasks.length ? 'All done. For now.' : 'Nothing yet. Enjoy it.') : null,
+      h('h4', {}, 'To-do', openTasks.length + derived.length > 0 && h('span', { class: 'count' }, openTasks.length + derived.length)),
+      openTasks.length + derived.length === 0 ? h('p', { class: 'muted small' }, S.tasks.length ? 'All done. For now.' : 'Nothing yet. Enjoy it.') : null,
       ...openTasks.map((t) => {
         const left = t.deadline - S.now;
         const app = TASK_APP[t.kind];
@@ -1350,7 +1364,16 @@ function renderNotes() {
           h('span', { class: 'task-box' }, '⬜'),
           h('span', { class: 'task-text' }, t.text.replace(/\s*\(by [^)]*\)/, ''),
             h('small', { class: `muted ${left <= 20 ? 'bad' : ''}` }, ` · by ${fmt(t.deadline)}${S.phase === 'day' ? (left <= 0 ? ' · now' : ` · ${left}m left`) : ''}`)),
-          hasApp(app) && h('button', { class: 'task-go', onclick: () => openApp(app) }, `${appOf(app).icon} Open ${appOf(app).name}`));
+          t.kind === 'promise' ? h('button', { class: 'task-go do', onclick: () => doPromise(t.id) }, '✓ Do it now')
+          : t.kind === 'invoice' ? h('button', { class: 'task-go do', onclick: () => payInvoice(t.id) }, `💳 Pay $${t.amount}`)
+          : app && hasApp(app) && h('button', { class: 'task-go', onclick: () => openApp(app) }, `${appOf(app).icon} Open ${appOf(app).name}`));
+      }),
+      ...derived.map((x) => {
+        const left = x.by - S.now;
+        return h('div', { class: `task open ${left <= 20 ? 'urgent' : ''}` },
+          h('span', { class: 'task-box' }, x.app === 'ryde' ? '🚕' : '🍱'),
+          h('span', { class: 'task-text' }, x.text, h('small', { class: `muted ${left <= 20 ? 'bad' : ''}` }, ` · by ${fmt(x.by)}${S.phase === 'day' ? ` · ${left}m left` : ''}`)),
+          h('button', { class: 'task-go', onclick: () => { S.selected = x.eventId ?? null; detailOpen = true; drawerOpen = false; openApp('calendar'); dirty(); } }, '📅 Open meeting'));
       }),
       doneTasks.length > 0 && h('div', { class: 'task-done' },
         ...doneTasks.map((t) => h('div', { class: `task ${t.status}` }, h('span', {}, t.status === 'done' ? '✅' : '❌'), h('span', {}, t.text.replace(/\s*\(by [^)]*\)/, ''))))),

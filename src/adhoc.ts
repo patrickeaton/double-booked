@@ -260,6 +260,25 @@ const TEAM_REQS: { key: string; from: string; app: InboxApp; title: string; body
   { key: 'survey', from: 'Bev (People Ops)', app: 'mail', title: 'Engagement survey results 📊', body: 'The engagement survey is back. {dur} to share it with the team {due}, with {exec}. Brace.', with: 'any', dur: 30, due: 'week', big: true },
 ];
 
+/** Small asks you can say yes to. Yes puts a promise in Notes; no costs a little goodwill now. */
+const FAVOURS: { key: string; from: string; app: InboxApp; body: string; yes: string; no: string; todo: string; within: number }[] = [
+  { key: 'deck', from: 'Ana (Customer Success)', app: 'huddle', body: 'can you send me the Q1 deck? the REAL one, not "Q1 final final v3"', yes: '"On it"', no: '"Ask Margo?"', todo: 'Send Ana the real Q1 deck', within: 60 },
+  { key: 'contract', from: 'Theo', app: 'huddle', body: 'do you know where the hosting contract PDF is? I need it for a thing. a lawyer thing', yes: '"I\'ll dig it out"', no: '"Not sure, sorry"', todo: 'Find Theo the hosting contract', within: 75 },
+  { key: 'receipts', from: 'Dana', app: 'mail', body: 'I need the receipts from last week\'s client dinner. Today, please.', yes: '"I\'ll send them over"', no: '"Margo has them"', todo: 'Send Dana the dinner receipts', within: 90 },
+  { key: 'survey', from: 'Bev (People Ops)', app: 'huddle', body: 'Could you fill in the desk-moves survey? It takes 2 minutes! (It takes 20.)', yes: '"Will do"', no: '"Bit swamped"', todo: "Fill in Bev's desk-moves survey", within: 120 },
+  { key: 'intro', from: 'Margo', app: 'huddle', body: 'can you intro me to that guy from the conference? the one with the hat. you know the one', yes: '"I\'ll find him"', no: '"…which hat?"', todo: 'Intro Margo to the man with the hat', within: 90 },
+  { key: 'logo', from: 'Wren', app: 'huddle', body: 'logo v14 is up. could you give it a look before I show Margo? be honest. not too honest', yes: '"I\'ll look"', no: '"Ship it, it\'s great"', todo: "Give Wren notes on logo v14", within: 60 },
+  { key: 'notes', from: 'Theo', app: 'huddle', body: 'could you write up notes from this morning? I remember nothing. it was a lot of words', yes: '"Sure"', no: '"I wasn\'t in it"', todo: "Write up this morning's notes for Theo", within: 90 },
+];
+
+const INVOICES: { payee: string; amount: number; who: ExecId; body: string }[] = [
+  { payee: 'Hydro Hosting', amount: 640, who: 'theo', body: 'Your monthly hosting invoice ($640) is due today. Late payment may result in "service adjustments".' },
+  { payee: 'Leaf & Co. Plants', amount: 180, who: 'margo', body: 'Invoice for office plant maintenance: $180. The fiddle-leaf fig is "struggling emotionally".' },
+  { payee: 'Bean There Coffee', amount: 220, who: 'margo', body: 'Monthly beans invoice: $220. Margo\'s oat milk surcharge is itemised separately. And extensively.' },
+  { payee: 'Pemberton Legal', amount: 900, who: 'dana', body: 'Invoice for legal services: $900. "Reviewing the kombucha fridge situation" took longer than expected.' },
+  { payee: 'CleanSweep', amount: 150, who: 'margo', body: 'Office cleaning, $150. We found 14 mugs under one desk. We are not judging.' },
+];
+
 /** Weekend work: it needs YOU, so it fights your plans for the same calendar. */
 const WEEKEND_WORK: { who: ExecId; app: InboxApp; title: string; duration: number; body: string; stakes: 1 | 2; book?: boolean }[] = [
   { who: 'margo', app: 'huddle', title: 'Investor update draft (Zoom)', duration: 45, body: 'can we jam on the investor update?? 45 mins. today ideally. it\'s fine. it\'s urgent. it\'s fine 🙃', stakes: 2 },
@@ -339,6 +358,8 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
     ...(has('brew') ? [['coffee', 1] as [string, number]] : []),
     ...(has('bundl') ? [['gift', 1] as [string, number]] : []),
     ...(has('tably') ? [['table', 1] as [string, number]] : []),
+    ['favour', 1.4],
+    ...(has('card') ? [['invoice', 0.9] as [string, number]] : []),
   ];
   const total = kinds.reduce((a, [, w]) => a + w, 0);
   const bosses: ExecId[] = d.execs.filter(isBoss);
@@ -487,6 +508,32 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
         at, type: 'task',
         task: { id: id(), kind: 'coffee', exec: x, text: `Get ${names([x])} a coffee (by ${fmt(by)})`, deadline: by, reward: x === 'margo' ? { standing: 3 } : { morale: 4 }, fail: x === 'margo' ? { standing: -3 } : { morale: -3 } },
         msg: { app: 'huddle', from: names([x]), body: x === 'margo' ? 'coffee. please. my usual. I am a husk ☕' : x === 'dana' ? 'Coffee. My usual. Please confirm receipt.' : 'Coffee would be good. The usual. Thank you. (Help.)' },
+      });
+    } else if (kind === 'favour') {
+      const opts = FAVOURS.filter((f) => !used.has(f.key) && (f.from !== 'Dana' || bosses.includes('dana')) && (f.from !== 'Theo' || bosses.includes('theo')));
+      if (!opts.length) continue;
+      const f = pick(r, opts);
+      used.add(f.key);
+      out.push({
+        at, type: 'msg',
+        msg: {
+          app: f.app, from: f.from, subject: f.app === 'mail' ? 'Quick one' : undefined, body: f.body, expiresIn: 45, timeoutEffects: { morale: -1 }, timeoutLog: `${f.from.split(' ')[0]} figured it out alone.`,
+          choices: [
+            { label: f.yes, effects: { morale: 1 }, promise: { text: f.todo, within: f.within, reward: { morale: 2, standing: 1 }, fail: { morale: -3, standing: -2 } } },
+            { label: f.no, effects: { morale: -1 } },
+          ],
+        },
+      });
+    } else if (kind === 'invoice') {
+      if (used.has('invoice')) continue;
+      used.add('invoice');
+      const v = pick(r, INVOICES.filter((x) => bosses.includes(x.who)));
+      if (!v) continue;
+      const by = Math.min(q15(at + 150 + r() * 90), t('17:00'));
+      out.push({
+        at, type: 'task',
+        task: { id: id(), kind: 'invoice', text: `Pay ${v.payee} ($${v.amount})`, payee: v.payee, amount: v.amount, exec: v.who, deadline: by, reward: { standing: 1 }, fail: { standing: -3, runway: -Math.round(v.amount * 0.25) } },
+        msg: { app: 'mail', from: `Accounts · ${v.payee}`, subject: `Invoice due ${fmt(by)}`, body: v.body },
       });
     } else if (kind === 'gift') {
       const opts = GIFTS.filter((g) => !used.has(g.to));

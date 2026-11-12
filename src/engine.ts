@@ -546,7 +546,7 @@ function startEventRaw(e: CalEvent) {
   chargeAddons(e);
   if (e.catering === 'wanted' && atOffice(e) && !e.withCatering) applyEffects({ standing: -4 }, `No catering at ${e.title}. Awkward.`);
   if (e.withRide && travelOf(e) && !e.prep && !rideStale(e)) applyEffects({ standing: 1 }, `${execNames(e.attendees)} read the brief in the Ryde. Walked into ${e.title} ready.`);
-  if (e.catering && e.withCatering) applyEffects(e.catering === 'wanted' ? { standing: 3 } : { morale: 3 }, `Catering at ${e.title} was a hit.`);
+  if (e.withCatering && canCater(e)) applyEffects(e.catering === 'wanted' ? { standing: 3 } : { morale: e.attendees.includes('team') ? 4 : 3 }, `Catering at ${e.title} was a hit.`);
   if (e.withCoffee && !e.coffee) applyEffects({ morale: 1 }, `Coffee at ${e.title}. Nice touch.`, true);
   if (S.selected === e.id) S.selected = null;
 
@@ -1047,6 +1047,47 @@ function chooseRaw(msgId: string, idx: number) {
     addMessage({ app: m.app, from: 'Margo', body: replies[Math.floor(Math.random() * replies.length)] }, true);
   } else applyEffects(c.effects, c.log ?? `${m.from}: "${c.label}"`);
   queueThen(c.then);
+  if (c.promise) {
+    const p = c.promise;
+    S.tasks.push({ id: `p-${m.id}`, kind: 'promise', text: p.text, recipient: m.from, deadline: Math.min(S.now + p.within, DAY_END - 5), reward: p.reward ?? { morale: 1 }, fail: p.fail, status: 'open' });
+    banner('notes', '📝 Added to Notes', p.text);
+  }
+}
+
+/** Keep a promise from Notes. It takes a few minutes of your attention. */
+export function doPromise(id: string) {
+  const task = S.tasks.find((x) => x.id === id);
+  if (!task || task.kind !== 'promise' || task.status !== 'open') return;
+  task.status = 'done';
+  fxFor(taskWho(task), { ...task.reward, stress: (task.reward.stress ?? 0) + 1 }, `Done: ${task.text}`);
+}
+
+/** Pay a bill from Card before it goes late. */
+export function payInvoice(id: string) {
+  const task = S.tasks.find((x) => x.id === id);
+  if (!task || task.kind !== 'invoice' || task.status !== 'open') return;
+  task.status = 'done';
+  charge(`Invoice: ${task.payee}`, task.amount ?? 0);
+  fxFor(taskWho(task), task.reward, `Paid ${task.payee} on time.`);
+}
+
+/** To-dos that come from the calendar itself: things a booked meeting still needs. */
+export interface Todo { id: string; text: string; by: number; app: AppId; eventId?: string }
+export function derivedTodos(): Todo[] {
+  if (S.phase !== 'day' && S.phase !== 'prep') return [];
+  const out: Todo[] = [];
+  for (const e of S.events) {
+    if (e.status !== 'scheduled' || e.start === null || e.departed || e.start <= S.now) continue;
+    if (e.catering === 'wanted' && atOffice(e) && !e.withCatering && editable(e))
+      out.push({ id: `cat-${e.id}`, text: `Order catering for ${e.title}`, by: e.start, app: 'calendar', eventId: e.id });
+    if (hasApp('ryde') && travelOf(e) && !e.remote && editable(e)) {
+      const leave = e.start - travelOf(e);
+      if (leave <= S.now) continue;
+      if (e.withRide && rideStale(e)) out.push({ id: `ride-${e.id}`, text: `Fix the Ryde for ${e.title}: wrong address`, by: leave, app: 'ryde', eventId: e.id });
+      else if (!e.withRide && e.prep) out.push({ id: `ride-${e.id}`, text: `Book a Ryde for ${e.title} (prep on the way)`, by: leave, app: 'ryde', eventId: e.id });
+    }
+  }
+  return out.sort((a, b) => a.by - b.by);
 }
 
 // ───────────────────────────── Kendall, the backup EA ─────────────────────────────
@@ -1226,6 +1267,8 @@ export const rideStale = (e: CalEvent) => !!e.withRide && !e.remote && !!e.trave
 /** A ride is still booked for a meeting that went remote. */
 export const rideUnneeded = (e: CalEvent) => !!e.withRide && !!e.remote;
 
+/** Catering makes sense for in-office meetings with a crowd, or anything that asks for it. */
+export const canCater = (e: CalEvent) => atOffice(e) && (!!e.catering || e.attendees.includes('team') || e.attendees.length >= 3);
 export const addonCost = (e: CalEvent) => ({ coffee: COFFEE_ADDON * e.attendees.length, catering: CATERING_COST });
 
 function chargeAddons(e: CalEvent) {
@@ -1344,7 +1387,7 @@ export function toggleAddon(id: string, which: 'coffee' | 'catering' | 'remote' 
   const e = findEvent(id);
   if (!e || !editable(e)) return;
   if (which === 'coffee' && atOffice(e)) e.withCoffee = !e.withCoffee;
-  if (which === 'catering' && atOffice(e)) e.withCatering = !e.withCatering;
+  if (which === 'catering' && canCater(e)) e.withCatering = !e.withCatering;
   if (which === 'remote' && e.remoteOk && !e.departed) {
     e.remote = !e.remote;
     if (!atOffice(e)) { e.withCoffee = false; e.withCatering = false; }
