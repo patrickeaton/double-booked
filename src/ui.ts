@@ -160,12 +160,18 @@ function render() {
   S.toasts = S.toasts.filter((t) => now - t.born < 1800);
   refs.banners.replaceChildren(
     ...[...S.banners.filter((b) => b.action).slice(-1), ...S.banners.filter((b) => !b.action).slice(S.banners.some((b) => b.action) ? -1 : -2)].map((b) =>
-      h('div', { class: `banner ${b.action ? 'has-action' : ''}`, role: 'button', style: `animation-delay:${b.born - now}ms`, onclick: () => openApp(b.app) },
-        h('span', { class: 'banner-icon', style: `background:${appOf(b.app).color}` }, appOf(b.app).icon),
-        h('span', { class: 'banner-text' }, h('b', {}, b.title), h('span', {}, b.body)),
-        b.action && h('button', { class: 'banner-act', onclick: (ev: Event) => { ev.stopPropagation(); S.banners = S.banners.filter((x) => x !== b); b.action!.run(); dirty(); } }, b.action.label),
-      ),
-    ),
+      {
+        const m = b.msgId ? S.messages.find((x) => x.id === b.msgId) : undefined;
+        const replies = m?.choices && m.chosen === undefined ? m.choices : null;
+        return h('div', { class: `banner ${b.action ? 'has-action' : ''} ${replies ? 'has-replies' : ''}`, role: 'button', style: `animation-delay:${b.born - now}ms`,
+          onclick: () => { S.banners = S.banners.filter((x) => x !== b); if (m) openMessage(m.id); else openApp(b.app); } },
+          h('span', { class: 'banner-icon', style: `background:${appOf(b.app).color}` }, appOf(b.app).icon),
+          h('span', { class: 'banner-text' }, h('b', {}, b.title), h('span', {}, b.body)),
+          b.action && h('button', { class: 'banner-act', onclick: (ev: Event) => { ev.stopPropagation(); S.banners = S.banners.filter((x) => x !== b); b.action!.run(); dirty(); } }, b.action.label),
+          replies && h('div', { class: 'banner-replies' },
+            ...replies.map((c, i) => h('button', { class: 'banner-reply', onclick: (ev: Event) => { ev.stopPropagation(); S.banners = S.banners.filter((x) => x !== b); choose(m!.id, i); } }, c.label))),
+        );
+      }),
   );
   refs.toasts.replaceChildren(...S.toasts.slice(-4).map((t) => h('div', { class: `toast ${t.good ? 'good' : 'bad'}`, style: `animation-delay:${t.born - now}ms` }, t.text)));
 
@@ -971,6 +977,16 @@ function renderMail() {
 
 // ── Chat apps (Messages, Huddle): conversations grouped by person ──
 /** "Bev (People Ops)", "Voicemail · Mum" and "Gerald Pemberton" thread as Bev, Mum and Gerald. */
+/** Jump straight to a message: its mail, or its chat thread. */
+function openMessage(id: string) {
+  const m = S.messages.find((x) => x.id === id);
+  if (!m) return;
+  if (m.app === 'mail') S.openMail = m.id;
+  else openThread[m.app] = threadKey(m.from);
+  if (layout === 'cal') layout = 'split';
+  openApp(m.app);
+}
+
 const threadKey = (from: string) => from.replace(/^Voicemail · /, '').split(/[\s(]/)[0];
 const openThread: Partial<Record<InboxApp, string | null>> = {};
 

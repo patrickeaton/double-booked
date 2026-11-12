@@ -921,7 +921,9 @@ export function addMessage(def: MsgDef, quiet = false): Message {
   if (def.choices && def.expiresIn) m.expires = S.now + Math.round(def.expiresIn * (S.meters.stress >= 80 ? 0.7 : 1));
   S.messages.push(m);
   if (!quiet && S.app !== APP_OF[def.app]) {
-    banner(APP_OF[def.app], def.from, def.subject ?? def.body);
+    // Ones you can answer stay up longer, with quick replies.
+    banner(APP_OF[def.app], def.from, def.subject ?? def.body, undefined, m.choices ? 9000 : undefined);
+    S.banners[S.banners.length - 1].msgId = m.id;
   }
   dirty();
   return m;

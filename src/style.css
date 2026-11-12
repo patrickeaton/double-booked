@@ -710,3 +710,10 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 
 .pause-cost { font-size: 10px; font-weight: 700; margin-left: 3px; opacity: 0.7; }
 .chip-btn.costly { background: #ffe9d6; color: #9a3412; }
+
+/* Notifications you can answer straight from the banner */
+.banner.has-replies { flex-wrap: wrap; }
+.banner-replies { flex-basis: 100%; display: flex; gap: 6px; flex-wrap: wrap; padding-left: 40px; }
+.banner-reply { background: #ece8de; border-radius: 99px; padding: 6px 11px; font-size: 12px; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.banner-reply:active { background: var(--ink); color: #fff; }
+.banner.has-replies .banner-text { flex: 1 1 0; }

@@ -4,7 +4,7 @@ import type { AppId, CalEvent, CallState, Effects, ExecId, LogEntry, Message, Me
 export type Phase = 'title' | 'memo' | 'prep' | 'day' | 'review' | 'over' | 'end';
 
 export interface BannerAction { label: string; run: () => void }
-export interface Banner { id: number; app: AppId; title: string; body: string; born: number; action?: BannerAction; ttl?: number }
+export interface Banner { id: number; app: AppId; title: string; body: string; born: number; action?: BannerAction; ttl?: number; /** Tapping it opens this message. */ msgId?: string }
 export interface Toast { id: number; text: string; good: boolean; born: number }
 export interface Sheet { productId: string; to: string | null; pay: 'company' | 'me' }
 
