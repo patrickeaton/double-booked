@@ -152,6 +152,9 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .stepper .btn { padding: 5px 10px; font-size: 13px; background: rgba(255, 255, 255, 0.16); color: #fff; }
 .stepper .len { min-width: 42px; text-align: center; font-size: 15px; }
 .stepper .len.short { color: #ffd166; }
+.stepper .lbl { width: 42px; }
+.stepper .btn.best { margin-left: auto; }
+.stepper .btn.primary-y { background: #ffd166; color: var(--ink); padding: 8px 14px; font-size: 14px; flex: 1; }
 .selbar-actions .btn .cost { font-size: 11px; opacity: 0.85; margin-left: 4px; font-weight: 600; }
 .selbar-actions .btn.icon { padding: 6px 10px; }
 .selbar-actions .btn { padding: 6px 10px; }

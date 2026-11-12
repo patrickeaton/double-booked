@@ -1,7 +1,7 @@
 import { CAL_END, CAL_START, DAYS, DAY_END, DRINKS, EXECS, PAYROLL, PRODUCTS, RULES, fmt } from './data';
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
-  minStart, newGame, nextDay, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
+  minStart, newGame, nextDay, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
   toggleSpeed, unschedule,
 } from './engine';
 import { METER_LABEL, S, dirty, fmtEffect, fmtMoney, isGood, readSave, setRenderer } from './state';
@@ -105,6 +105,14 @@ function render() {
     }
     refs.main.replaceChildren(...panes);
   });
+
+  if (scrollTarget !== null) {
+    const sc = refs.main.querySelector<HTMLElement>('.cal-scroll');
+    const ev = findEvent(S.selected);
+    const target = ev?.start ?? scrollTarget;
+    if (sc) sc.scrollTo({ top: Math.max(0, (target - CAL_START - 30) * PX), behavior: 'smooth' });
+    scrollTarget = null;
+  }
 
   refs.dock.replaceChildren(...renderDock(isSplit));
 
@@ -338,8 +346,15 @@ function renderSelection(e: CalEvent) {
     ),
     e.note && h('div', { class: 'small note' }, e.note),
     issues.length > 0 && h('div', { class: 'req-tags' }, ...issues.map((i) => h('span', { class: `tag ${i.bad ? 'bad' : ''}` }, `${i.icon} ${i.text}`))),
+    canAct && h('div', { class: 'stepper' },
+      h('span', { class: 'small muted lbl' }, 'Start'),
+      e.start !== null && h('button', { class: 'btn', onclick: () => { nudgeStart(e.id, -15); scrollToEvent(e); } }, '−15'),
+      e.start !== null && h('b', { class: 'len' }, fmt(e.start).replace(/(am|pm)$/, '')),
+      e.start !== null && h('button', { class: 'btn', onclick: () => { nudgeStart(e.id, 15); scrollToEvent(e); } }, '+15'),
+      h('button', { class: `btn ${e.start === null ? 'best primary-y' : ''}`, onclick: () => { autoPlace(e.id); scrollToEvent(e); } }, e.start === null ? '📍 Book best slot' : '📍 Best'),
+    ),
     canResize(e) && h('div', { class: 'stepper' },
-      h('span', { class: 'small muted' }, 'Length'),
+      h('span', { class: 'small muted lbl' }, 'Length'),
       h('button', { class: 'btn', onclick: () => resizeEvent(e.id, -15), disabled: e.duration <= 15 }, '−15'),
       h('b', { class: `len ${e.duration < ok ? 'short' : ''}` }, `${e.duration}m`),
       h('button', { class: 'btn', onclick: () => resizeEvent(e.id, 15) }, '+15'),
@@ -349,7 +364,7 @@ function renderSelection(e: CalEvent) {
       h('span', { class: 'small muted' }, `Running since ${fmt(e.start!)} · ${S.now - e.start!} of ${e.planned ?? e.duration}m${(e.planned ?? 0) < ok ? '' : ''}`),
     ),
     h('div', { class: 'selbar-actions' },
-      e.status === 'pending' ? h('span', { class: 'small hint-strong' }, '👇 Tap a time') : h('span', { class: 'spacer' }),
+      e.status === 'pending' ? h('span', { class: 'small hint-strong' }, 'or tap a time 👇') : h('span', { class: 'spacer' }),
       canWrap(e) && h('button', { class: 'btn danger', onclick: () => wrapUpNow(e.id) }, '✂️ Wrap up now'),
       e.status === 'scheduled' && !e.fixed && h('button', { class: 'btn', onclick: () => unschedule(e.id) }, 'Unbook'),
       bumpFx && h('button', { class: 'btn', onclick: () => bumpEvent(e.id), title: 'Push to tomorrow' }, '📆 Tmrw', h('small', { class: 'cost' }, bumpCost || 'free')),
@@ -365,6 +380,11 @@ function minuteAt(col: HTMLElement, clientY: number) {
 }
 
 let suppressUntil = 0;
+let scrollTarget: number | null = null;
+
+function scrollToEvent(e: CalEvent) {
+  if (e.start !== null) scrollTarget = e.start;
+}
 
 function makeDraggable(el: HTMLElement, id: string, isBlock: boolean) {
   el.addEventListener('click', () => {

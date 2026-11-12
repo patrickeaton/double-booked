@@ -391,7 +391,7 @@ export function minStart(): number {
   return DAY_START;
 }
 
-export function placeEvent(id: string, start: number) {
+export function placeEvent(id: string, start: number, keepSelected = false) {
   const e = findEvent(id);
   if (!e || e.fixed) return;
   if (e.status !== 'pending' && e.status !== 'scheduled') return;
@@ -406,8 +406,54 @@ export function placeEvent(id: string, start: number) {
   e.start = s;
   e.status = 'scheduled';
   e.fresh = false;
-  S.selected = null;
+  if (!keepSelected) S.selected = null;
   dirty();
+}
+
+/** Move a meeting by ±15 min steps (books it at the best slot first if it's unbooked). */
+export function nudgeStart(id: string, delta: number) {
+  const e = findEvent(id);
+  if (!e || e.fixed) return;
+  if (e.status === 'pending') return autoPlace(id);
+  if (e.status !== 'scheduled' || e.start === null) return;
+  placeEvent(id, e.start + delta, true);
+}
+
+/** The earliest start with the fewest problems (clashes, rule breaks, wrong window, no prep). */
+export function bestSlot(e: CalEvent): number | null {
+  const lo = Math.max(minStart(), Math.ceil(DAY_START / 15) * 15);
+  const hi = DAY_END - e.duration;
+  if (lo > hi) return null;
+  const saved = { start: e.start, status: e.status };
+  let best: number | null = null;
+  let bestScore = Infinity;
+  for (let t = lo; t <= hi; t += 15) {
+    e.start = t;
+    e.status = 'scheduled';
+    const bad = issuesFor(e).filter((i) => i.bad && i.icon !== '☕').length;
+    // nudge ties toward the requested window, then earlier
+    const score = bad * 1000 + (e.window && (t < e.window[0] || t > e.window[1]) ? 500 : 0) + (t - lo) / 15;
+    if (score < bestScore) {
+      bestScore = score;
+      best = t;
+    }
+    if (bad === 0 && (!e.window || (t >= e.window[0] && t <= e.window[1]))) break;
+  }
+  e.start = saved.start;
+  e.status = saved.status;
+  return best;
+}
+
+export function autoPlace(id: string): number | null {
+  const e = findEvent(id);
+  if (!e || e.fixed || (e.status !== 'pending' && e.status !== 'scheduled')) return null;
+  const t = bestSlot(e);
+  if (t === null) {
+    banner('calendar', '🙅 No room', 'There is no time left today for that.');
+    return null;
+  }
+  placeEvent(id, t, true);
+  return t;
 }
 
 export function unschedule(id: string) {
