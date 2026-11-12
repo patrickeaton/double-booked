@@ -334,6 +334,12 @@ function renderCalendar() {
   const execs = visibleExecs();
   const pending = S.events.filter((e) => e.status === 'pending');
   const sel = findEvent(S.selected);
+  // Phone: a newly tapped event opens its details in the sidecar; tablet keeps the inline bar.
+  if (S.selected !== lastSel) {
+    lastSel = S.selected;
+    detailOpen = !!S.selected;
+  }
+  if (!sel) detailOpen = false;
 
   const hiddenN = activeExecs().length - execs.length;
   const header = h('header', { class: 'app-head' },
@@ -344,13 +350,46 @@ function renderCalendar() {
       : h('span', { class: 'muted' }, S.phase === 'day' ? (d.weekend ? '🌴 Weekend. Technically.' : `${fmt(S.now)} · ends ${fmt(DAY_END)}`) : ''),
   );
 
-  const tray = h('div', { class: 'tray' },
-    h('div', { class: 'tray-head' }, `Requests`, h('span', { class: 'count' }, pending.length),
-      h('span', { class: 'muted hint' }, pending.length ? split.matches ? 'Drag onto the calendar, or tap then tap a time' : 'Swipe for more · tap or drag down to book' : 'All booked 🎉')),
-    h('div', { class: 'tray-cards' }, ...pending.map(renderCard)),
-  );
+  // Tablet: an inline tray. Phone: a button that opens a sidecar drawer (it closes as soon as you drag).
+  const tray = split.matches
+    ? h('div', { class: 'tray' },
+        h('div', { class: 'tray-head' }, `Requests`, h('span', { class: 'count' }, pending.length),
+          h('span', { class: 'muted hint' }, pending.length ? 'Drag onto the calendar, or tap then tap a time' : 'All booked 🎉')),
+        h('div', { class: 'tray-cards' }, ...pending.map(renderCard)))
+    : h('button', { class: `req-btn ${pending.length ? '' : 'empty'}`, disabled: !pending.length, onclick: () => { drawerOpen = true; dirty(); } },
+        '📥 Requests', h('span', { class: 'count' }, pending.length),
+        h('span', { class: 'muted hint' }, pending.length ? 'Tap to open ›' : 'All booked 🎉'));
+  if (!pending.length) drawerOpen = false;
+  const detail = !split.matches && sel && detailOpen
+    ? h('div', { class: 'drawer-wrap' },
+        h('div', { class: 'drawer-backdrop', style: sideDelay(), onclick: () => { detailOpen = false; dirty(); } }),
+        h('aside', { class: 'drawer detail', style: sideDelay() },
+          h('div', { class: 'drawer-head' }, h('b', {}, sel.status === 'pending' ? 'Book it' : 'Details'),
+            h('button', { class: 'win-btn', onclick: () => select(null) }, '✕')),
+          h('div', { class: 'drawer-cards', 'data-keep': 'detail' },
+            renderSelection(sel),
+            (sel.status === 'pending' || (sel.status === 'scheduled' && !sel.fixed)) &&
+              h('button', { class: 'btn big pick-time', onclick: () => { detailOpen = false; dirty(); } }, '👆 Pick a time on the calendar'),
+            h('p', { class: 'muted small' }, 'Or drag it on the calendar. This panel gets out of the way.'))))
+    : null;
+  const drawer = !split.matches && drawerOpen
+    ? h('div', { class: 'drawer-wrap' },
+        h('div', { class: 'drawer-backdrop', style: sideDelay(), onclick: () => { drawerOpen = false; dirty(); } }),
+        h('aside', { class: 'drawer', style: sideDelay() },
+          h('div', { class: 'drawer-head' }, h('b', {}, 'Requests'), h('span', { class: 'count' }, pending.length),
+            h('button', { class: 'win-btn', onclick: () => { drawerOpen = false; dirty(); } }, '✕')),
+          h('p', { class: 'muted small drawer-hint' }, 'Tap one to pick a time, or drag it sideways onto the calendar.'),
+          h('div', { class: 'drawer-cards', 'data-keep': 'drawer' }, ...pending.map(renderCard))))
+    : null;
 
-  const selBar = sel ? renderSelection(sel) : null;
+  const phone = !split.matches;
+  const selBar = !sel ? null
+    : !phone ? renderSelection(sel)
+    : detailOpen ? null
+    : h('div', { class: 'pickbar' },
+        h('span', {}, '👆 Tap a time for ', h('b', {}, sel.title)),
+        h('button', { class: 'btn', onclick: () => { detailOpen = true; dirty(); } }, 'Details'),
+        h('button', { class: 'btn', onclick: () => select(null) }, '✕'));
 
   const heads = h('div', { class: 'cal-heads' },
     h('div', { class: 'gutter' }),
@@ -412,7 +451,7 @@ function renderCalendar() {
     );
     return h('div', { class: 'app cal locked' }, header, lock, tray, scroller);
   }
-  return h('div', { class: `app cal ${sel ? 'placing' : ''}` }, header, tray, selBar, scroller);
+  return h('div', { class: `app cal ${sel ? 'placing' : ''}` }, header, tray, selBar, scroller, drawer ?? detail);
 }
 
 const t9 = () => 9 * 60;
@@ -546,9 +585,23 @@ function scrollToEvent(e: CalEvent) {
   if (e.start !== null) scrollTarget = e.start;
 }
 
+let drawerOpen = false;
+/** The sidecars re-render every tick; offset their slide-in so it only plays once. */
+let sideKey = '';
+let sideBorn = 0;
+function sideDelay() {
+  const key = drawerOpen ? 'req' : detailOpen ? `d:${S.selected}` : '';
+  if (key !== sideKey) { sideKey = key; sideBorn = performance.now(); }
+  return `animation-delay:${sideBorn - performance.now()}ms`;
+}
+let detailOpen = false;
+let lastSel: string | null = null;
+
 function makeDraggable(el: HTMLElement, id: string, isBlock: boolean) {
   el.addEventListener('click', () => {
-    if (Date.now() >= suppressUntil) select(id);
+    if (Date.now() < suppressUntil) return;
+    if (drawerOpen) drawerOpen = false;
+    select(id);
   });
   el.addEventListener('pointerdown', (down: PointerEvent) => {
     if (down.button !== 0) return;
@@ -558,9 +611,20 @@ function makeDraggable(el: HTMLElement, id: string, isBlock: boolean) {
     const offY = isBlock ? down.clientY - r.top : 0;
     const ev = findEvent(id)!;
     let ghost: HTMLElement | null = null;
+    // In the drawer the list scrolls vertically, so a drag is a sideways pull towards the calendar.
+    const inDrawer = !!el.closest('.drawer');
+    const isDrag = (x: number, y: number) =>
+      Math.hypot(x - sx, y - sy) > 7 &&
+      (isBlock || split.matches || (inDrawer ? Math.abs(x - sx) > Math.abs(y - sy) : Math.abs(y - sy) > Math.abs(x - sx)));
 
     const move = (m: PointerEvent) => {
-      if (!ghost && Math.hypot(m.clientX - sx, m.clientY - sy) > 7 && (isBlock || split.matches || Math.abs(m.clientY - sy) > Math.abs(m.clientX - sx))) {
+      if (!ghost && isDrag(m.clientX, m.clientY)) {
+        if (inDrawer || detailOpen) {
+          // Get the sidecar out of the way so the calendar is free to drop on.
+          drawerOpen = false;
+          detailOpen = false;
+          document.querySelector('.drawer-wrap')?.remove();
+        }
         ghost = h('div', { class: 'drag-ghost', style: `--c:${EXECS[ev.attendees[0]].color};height:${Math.max(18, ev.duration * PX)}px` }, h('b', {}, ev.title), h('span', { class: 'ghost-time' }));
         document.body.append(ghost);
         document.body.classList.add('dragging');
@@ -591,7 +655,7 @@ function makeDraggable(el: HTMLElement, id: string, isBlock: boolean) {
       window.removeEventListener('pointercancel', up);
       document.body.classList.remove('dragging');
       document.querySelectorAll('.cal-col.hover').forEach((c) => c.classList.remove('hover'));
-      const moved = Math.hypot(u.clientX - sx, u.clientY - sy) > 7 && (isBlock || split.matches || Math.abs(u.clientY - sy) > Math.abs(u.clientX - sx));
+      const moved = isDrag(u.clientX, u.clientY);
       if (ghost || moved) {
         ghost?.remove();
         suppressUntil = Date.now() + 250;
