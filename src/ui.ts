@@ -507,7 +507,7 @@ function renderApp(app: AppId): HTMLElement {
   switch (app) {
     case 'calendar': return renderCalendar();
     case 'mail': return renderMail();
-    case 'huddle': return renderFeed('huddle', 'Huddle', '# general-chaos');
+    case 'huddle': return renderFeed('huddle', 'Huddle', 'Work chat');
     case 'messages': return renderFeed('messages', 'Messages', 'Personal');
     case 'brew': return renderBrew();
     case 'bundl': return renderBundl();
@@ -546,65 +546,149 @@ function choiceButtons(m: (typeof S.messages)[number]) {
 const msgTime = (m: { at: number; day?: number }) => ((m.day ?? S.dayIndex) === S.dayIndex ? fmt(m.at) : dayAt(m.day!).weekday);
 const dayName = (i: number) => (i === S.dayIndex ? 'Today' : i === S.dayIndex - 1 ? `Yesterday · ${dayAt(i).weekday}` : `${dayAt(i).weekday} · Day ${i + 1}`);
 
-function renderMail() {
-  const mails = S.messages.filter((m) => m.app === 'mail').slice().reverse();
-  const open = S.messages.find((m) => m.id === S.openMail);
-  if (open) {
-    open.read = true;
-    const unread = mails.filter((m) => !m.read).length;
-    return h('div', { class: 'app mail' },
-      h('header', { class: 'app-head back-head' },
-        h('button', { class: 'back-btn', onclick: () => { S.openMail = null; dirty(); } }, '‹ Inbox', unread > 0 && h('span', { class: 'back-count' }, unread)),
-        h('h2', {}, 'Mail'),
-        h('span', {}),
-      ),
-      h('div', { class: 'scroll', 'data-keep': `mail-${open.id}` },
-        h('article', { class: 'mail-open' },
-          h('div', { class: 'mail-from' }, h('span', { class: 'avatar-dot', style: `background:${avatarColor(open.from)}` }, open.from[0]), h('div', {}, h('b', {}, open.from), h('div', { class: 'muted small' }, msgTime(open)))),
-          h('h3', {}, open.subject ?? '(no subject)'),
-          h('div', { class: 'mail-body' }, open.body),
-          choiceButtons(open),
-        ),
-      ),
-    );
-  }
-  return h('div', { class: 'app mail' },
-    head('Mail', `${mails.filter((m) => !m.read).length} unread`),
-    h('div', { class: 'scroll', 'data-keep': 'mail' },
-      mails.length === 0 ? h('p', { class: 'empty' }, 'Inbox zero. Enjoy it while it lasts.') : null,
-      ...mails.map((m) =>
-        h('button', { class: `mail-row ${m.read ? '' : 'unread'}`, onclick: () => { S.openMail = m.id; dirty(); } },
-          h('span', { class: 'avatar-dot', style: `background:${avatarColor(m.from)}` }, m.from[0]),
-          h('span', { class: 'mail-row-text' },
-            h('span', { class: 'mail-row-top' }, h('b', {}, m.from), h('span', { class: 'muted small' }, msgTime(m))),
-            h('span', { class: 'mail-subj' }, m.choices && m.chosen === undefined ? '⚡ ' : '', m.subject ?? ''),
-            h('span', { class: 'muted small clamp' }, m.body),
-          ),
-        ),
-      ),
+/** Full-screen tablet layout: inbox apps show the list and the open item side by side. */
+const isWide = () => split.matches && layout === 'app';
+
+type Msg = (typeof S.messages)[number];
+
+function mailRow(m: Msg) {
+  return h('button', { class: `mail-row ${m.read ? '' : 'unread'} ${S.openMail === m.id ? 'sel' : ''}`, onclick: () => { S.openMail = m.id; dirty(); } },
+    h('span', { class: 'avatar-dot', style: `background:${avatarColor(m.from)}` }, m.from[0]),
+    h('span', { class: 'mail-row-text' },
+      h('span', { class: 'mail-row-top' }, h('b', {}, m.from), h('span', { class: 'muted small' }, msgTime(m))),
+      h('span', { class: 'mail-subj' }, m.choices && m.chosen === undefined ? '⚡ ' : '', m.subject ?? ''),
+      h('span', { class: 'muted small clamp' }, m.body),
     ),
   );
 }
 
-function renderFeed(app: InboxApp, title: string, sub: string) {
-  const msgs = S.messages.filter((m) => m.app === app);
+function mailBody(open: Msg) {
+  open.read = true;
+  return h('div', { class: 'scroll', 'data-keep': `mail-${open.id}` },
+    h('article', { class: 'mail-open' },
+      h('div', { class: 'mail-from' }, h('span', { class: 'avatar-dot', style: `background:${avatarColor(open.from)}` }, open.from[0]), h('div', {}, h('b', {}, open.from), h('div', { class: 'muted small' }, msgTime(open)))),
+      h('h3', {}, open.subject ?? '(no subject)'),
+      h('div', { class: 'mail-body' }, open.body),
+      choiceButtons(open),
+    ),
+  );
+}
+
+const backHead = (label: string, title: string, unread: number, onBack: () => void) =>
+  h('header', { class: 'app-head back-head' },
+    h('button', { class: 'back-btn', onclick: onBack }, `‹ ${label}`, unread > 0 && h('span', { class: 'back-count' }, unread)),
+    h('h2', {}, title),
+    h('span', {}),
+  );
+
+function renderMail() {
+  const mails = S.messages.filter((m) => m.app === 'mail').slice().reverse();
+  const open = S.messages.find((m) => m.id === S.openMail && m.app === 'mail');
+  const list = () => [
+    mails.length === 0 ? h('p', { class: 'empty' }, 'Inbox zero. Enjoy it while it lasts.') : null,
+    ...mails.map(mailRow),
+  ];
+  if (isWide()) {
+    const detail = open ? mailBody(open) : h('p', { class: 'empty' }, 'Pick an email.');
+    return h('div', { class: 'app mail' },
+      head('Mail', `${mails.filter((m) => !m.read).length} unread`),
+      h('div', { class: 'two-pane' },
+        h('div', { class: 'tp-list scroll', 'data-keep': 'mail' }, ...list()),
+        h('div', { class: 'tp-detail' }, detail),
+      ),
+    );
+  }
+  if (open) {
+    const body = mailBody(open);
+    return h('div', { class: 'app mail' },
+      backHead('Inbox', 'Mail', mails.filter((m) => !m.read).length, () => { S.openMail = null; dirty(); }),
+      body,
+    );
+  }
+  return h('div', { class: 'app mail' },
+    head('Mail', `${mails.filter((m) => !m.read).length} unread`),
+    h('div', { class: 'scroll', 'data-keep': 'mail' }, ...list()),
+  );
+}
+
+// ── Chat apps (Messages, Huddle): conversations grouped by person ──
+/** "Bev (People Ops)", "Voicemail · Mum" and "Gerald Pemberton" thread as Bev, Mum and Gerald. */
+const threadKey = (from: string) => from.replace(/^Voicemail · /, '').split(/[\s(]/)[0];
+const openThread: Partial<Record<InboxApp, string | null>> = {};
+
+function threadsFor(app: InboxApp) {
+  const map = new Map<string, Msg[]>();
+  S.messages.forEach((m) => {
+    if (m.app !== app) return;
+    const k = threadKey(m.from);
+    if (!map.has(k)) map.set(k, []);
+    map.get(k)!.push(m);
+  });
+  return [...map.entries()]
+    .map(([key, ms]) => ({ key, ms, last: ms[ms.length - 1] }))
+    .sort((x, y) => S.messages.indexOf(y.last) - S.messages.indexOf(x.last));
+}
+
+function threadRow(app: InboxApp, t: ReturnType<typeof threadsFor>[number], selected: boolean) {
+  const unread = t.ms.filter((m) => !m.read).length;
+  const pending = t.ms.some((m) => m.choices && m.chosen === undefined);
+  const name = t.last.from.replace(/^Voicemail · /, '');
+  return h('button', { class: `mail-row thread-row ${unread ? 'unread' : ''} ${selected ? 'sel' : ''}`, onclick: () => { openThread[app] = t.key; dirty(); } },
+    h('span', { class: 'avatar-dot', style: `background:${avatarColor(name)}` }, name[0]),
+    h('span', { class: 'mail-row-text' },
+      h('span', { class: 'mail-row-top' }, h('b', {}, name), h('span', { class: 'muted small' }, msgTime(t.last))),
+      h('span', { class: 'muted small clamp' }, pending ? '⚡ ' : '', t.last.body),
+    ),
+    unread > 0 && h('span', { class: 'back-count' }, unread),
+  );
+}
+
+function threadBody(app: InboxApp, msgs: Msg[]) {
   msgs.forEach((m) => (m.read = true));
+  return h('div', { class: 'scroll', 'data-keep': `thread-${app}-${threadKey(msgs[0].from)}`, 'data-stick': 'bottom', 'data-count': msgs.length },
+    ...msgs.flatMap((m, i) => [
+      (i === 0 || (msgs[i - 1].day ?? 0) !== (m.day ?? 0)) ? h('div', { class: 'day-sep' }, dayName(m.day ?? 0)) : null,
+      h('div', { class: 'bubble-row' },
+        h('span', { class: 'avatar-dot', style: `background:${avatarColor(m.from)}` }, m.from[0]),
+        h('div', { class: 'bubble-wrap' },
+          h('div', { class: 'bubble-meta' }, h('b', {}, m.from), h('span', { class: 'muted small' }, fmt(m.at))),
+          h('div', { class: 'bubble' }, m.body),
+          choiceButtons(m),
+        ),
+      ),
+    ]),
+  );
+}
+
+function renderFeed(app: InboxApp, title: string, sub: string) {
+  const threads = threadsFor(app);
+  let key = openThread[app] ?? null;
+  if (key && !threads.some((t) => t.key === key)) key = openThread[app] = null;
+  const empty = h('p', { class: 'empty' }, app === 'messages' ? "No texts yet. Your friends think you're busy." : 'Quiet… too quiet.');
+
+  if (isWide()) {
+    if (!key && threads[0]) key = threads[0].key;
+    const t = threads.find((x) => x.key === key);
+    return h('div', { class: `app feed feed-${app}` },
+      head(title, sub),
+      h('div', { class: 'two-pane' },
+        h('div', { class: 'tp-list scroll', 'data-keep': `list-${app}` }, threads.length ? null : empty, ...threads.map((x) => threadRow(app, x, x.key === key))),
+        h('div', { class: 'tp-detail' }, t ? threadBody(app, t.ms) : null),
+      ),
+    );
+  }
+  const t = key ? threads.find((x) => x.key === key) : undefined;
+  if (t) {
+    const body = threadBody(app, t.ms);
+    const others = threads.filter((x) => x !== t).reduce((n, x) => n + x.ms.filter((m) => !m.read).length, 0);
+    return h('div', { class: `app feed feed-${app}` },
+      backHead(title, t.last.from.replace(/^Voicemail · /, ''), others, () => { openThread[app] = null; dirty(); }),
+      body,
+    );
+  }
   return h('div', { class: `app feed feed-${app}` },
     head(title, sub),
-    h('div', { class: 'scroll', 'data-keep': `feed-${app}`, 'data-stick': 'bottom', 'data-count': msgs.length },
-      msgs.length === 0 ? h('p', { class: 'empty' }, app === 'messages' ? 'No texts yet. Your friends think you\'re busy.' : 'Quiet… too quiet.') : null,
-      ...msgs.flatMap((m, i) => [
-        (i === 0 || (msgs[i - 1].day ?? 0) !== (m.day ?? 0)) ? h('div', { class: 'day-sep' }, dayName(m.day ?? 0)) : null,
-        h('div', { class: 'bubble-row' },
-          h('span', { class: 'avatar-dot', style: `background:${avatarColor(m.from)}` }, m.from[0]),
-          h('div', { class: 'bubble-wrap' },
-            h('div', { class: 'bubble-meta' }, h('b', {}, m.from), h('span', { class: 'muted small' }, fmt(m.at))),
-            h('div', { class: 'bubble' }, m.body),
-            choiceButtons(m),
-          ),
-        ),
-      ]),
-    ),
+    h('div', { class: 'scroll', 'data-keep': `list-${app}` }, threads.length ? null : empty, ...threads.map((x) => threadRow(app, x, false))),
   );
 }
 
