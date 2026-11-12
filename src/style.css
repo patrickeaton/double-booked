@@ -832,3 +832,8 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .task-go.do { background: var(--ink); color: #fff; }
 .chip.want { box-shadow: inset 0 0 0 1.5px #e5484d; }
 .d-hint.bad { color: var(--bad); font-weight: 700; }
+
+/* Team treats: a coffee run (Brew) or team lunch (Tably) */
+.treat-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: #fff6e5; border: 1px solid #f3dfb5; border-radius: 14px; padding: 10px 12px; margin-bottom: 12px; }
+.treat-card .btn:disabled { opacity: 0.6; }
+.treat-slots { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }

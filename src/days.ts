@@ -38,12 +38,13 @@ export const DAYS: DayDef[] = [
       from: 'Bev (People Ops)',
       subject: 'Welcome aboard! 🌱',
       body:
-        "Hi and welcome! You're Margo's new Executive Assistant. Your last three predecessors were lovely.\n\nYou're on a 14-day probation (weekends included — startups don't believe in them). Margo said yes to a lot of things overnight, and some of them are already on her calendar. Some of them overlap. Some of them break her own rules. Get her day sorted before 9am.\n\nFor now you've got the basics: Calendar, Huddle (chat), Notes and Brew (coffee). IT says the rest of your apps are \"coming\".\n\nTip: things go long. Leave yourself some breathing room. 💐",
+        "Hi and welcome! You're Margo's new Executive Assistant. Your last three predecessors were lovely.\n\nYou're on a 14-day probation (weekends included — startups don't believe in them). Margo said yes to a lot of things overnight, and some of them are already on her calendar. Some of them overlap. Some of them break her own rules. Get her day sorted before 9am.\n\nFor now you've got the basics: Calendar, Huddle (chat), Notes and Brew (coffee). IT says the rest of your apps are \"coming\".\n\nYour own calendar is on there too. Protect your lunch.\n\nTip: things go long. Leave yourself some breathing room. 💐",
     },
-    execs: ['margo'],
+    execs: ['margo', 'me'],
     rules: ['margoMorning'],
     events: [
-      { id: 'd1-standup', title: 'Standup', attendees: ['margo'], start: t('9:00'), duration: 15, fixed: true, reward: { morale: 1 } },
+      myLunch('d1'),
+      { id: 'd1-standup', title: 'Standup', attendees: ['margo', 'me'], start: t('9:00'), duration: 15, fixed: true, reward: { morale: 1 } },
       {
         id: 'd1-kestrel', proposed: t('11:00'), title: 'Investor call · Kestrel Ventures', bumpPenalty: { standing: -6, runway: -1000 }, attendees: ['margo'], start: null, duration: 45,
         prep: 30, window: [t('10:00'), t('16:00')], overrun: 20,
@@ -113,10 +114,11 @@ export const DAYS: DayDef[] = [
       body:
         "Two things!\n\n1. Margo read a book on productivity. Effective today: no meeting may run longer than 60 minutes.\n\n2. You're now also managing Theo (CTO). His 1–5pm focus block is non-negotiable. Last EA who touched it now works at a llama farm. (Happily, we hear.)",
     },
-    execs: ['margo', 'theo'],
+    execs: ['margo', 'theo', 'me'],
     rules: ['margoMorning', 'theoFocus', 'max60'],
     events: [
-      { id: 'd2-standup', title: 'Standup', attendees: ['margo', 'theo'], start: t('9:00'), duration: 15, fixed: true, reward: { morale: 1 } },
+      myLunch('d2'),
+      { id: 'd2-standup', title: 'Standup', attendees: ['margo', 'theo', 'me'], start: t('9:00'), duration: 15, fixed: true, reward: { morale: 1 } },
       { id: 'd2-focus', title: 'Focus time 🔒', attendees: ['theo'], start: t('13:00'), duration: 240, fixed: true, kind: 'focus', note: 'Sacred.' },
       {
         id: 'd2-review', proposed: t('10:00'), title: 'Product review', minOk: 45, bumpPenalty: { standing: -4, morale: -2 }, catering: 'nice', attendees: ['margo', 'theo'], start: null, duration: 60, overrun: 30,
@@ -205,7 +207,7 @@ export const DAYS: DayDef[] = [
       from: 'Bev (People Ops)',
       subject: 'Happy Friday! 🎉 (+ some apps)',
       body:
-        "You made it to Friday! You also get your own calendar now (lighter, but yours to protect). IT came through: you now have Bundl (shopping), the company Card, and Presto ⚡ (one-tap shortcuts — set them up now, tap them later).\n\nFriday Wins is at 4:30. Attendance is \"optional\". It is not optional.",
+        "You made it to Friday! Keep protecting your own calendar: it gets busier from here. IT came through: you now have Bundl (shopping), the company Card, and Presto ⚡ (one-tap shortcuts — set them up now, tap them later).\n\nFriday Wins is at 4:30. Attendance is \"optional\". It is not optional.",
     },
     execs: W1,
     rules: WEEKDAY_RULES,

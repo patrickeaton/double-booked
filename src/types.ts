@@ -118,7 +118,11 @@ export interface Choice {
   then?: Script[];
   /** Saying yes puts a to-do in Notes: do it in time or let them down. */
   promise?: { text: string; within: number; reward?: Effects; fail: Effects };
+  /** Hand a job to Kendall. */
+  delegate?: KendallJob;
 }
+
+export type KendallJob = 'catering' | 'coffee' | 'requests' | 'rides';
 
 export interface MsgDef {
   app: InboxApp;
@@ -164,7 +168,9 @@ export interface TaskDef {
   id: string;
   text: string;
   deadline: number;
-  kind: 'coffee' | 'gift' | 'reservation' | 'invoice' | 'promise';
+  kind: 'coffee' | 'gift' | 'reservation' | 'invoice' | 'promise' | 'treat';
+  /** treat: a team lunch (Tably) or a coffee run (Brew). */
+  treat?: 'lunch' | 'coffee';
   /** invoice: who gets paid, and how much. */
   payee?: string;
   amount?: number;
@@ -205,7 +211,7 @@ export type Script = { at: number; after?: number; when?: ScriptCond } & (
   | { type: 'call'; call: CallDef }
   | { type: 'reveal'; flag: string }
   /** Kendall, the backup EA, touches the calendars: mostly helpful, sometimes not. */
-  | { type: 'kendall'; mode: 'help' | 'sabotage' }
+  | { type: 'kendall'; mode: 'help' | 'sabotage' | 'job'; job?: KendallJob }
   | { type: 'effects'; effects: Effects; log: string; msg?: MsgDef }
 );
 

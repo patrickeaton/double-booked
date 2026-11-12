@@ -3,7 +3,7 @@ import { STEP_LABEL, drinkEmoji, drinkName, drinkPrice, optionsFor, specString, 
 import { CAL_END, CAL_START, DAY_END, DAY_START, EXECS, isBoss, PAYROLL, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, TABLE_TIMES, fmt } from './data';
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
-  minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, resume, clockGlide, derivedTodos, doPromise, payInvoice, canCater,
+  minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, resume, clockGlide, coffeeRun, teamLunch, treatedToday, canTreat, TREAT_COST, TEAM_SIZE, LUNCH_TIMES, derivedTodos, doPromise, payInvoice, canCater,
   toggleSpeed, scheduleAllTickets, bookAllRequests, unschedule, whereOf, atOffice, placeLabel, padBefore, padAfter, canBuffer, setBuffer, scheduleTicket, ticketBlock, toggleAttendee, canEditAttendees, skippedFrom, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
 } from './engine';
 import { avatarEl } from './avatars';
@@ -1261,6 +1261,9 @@ function renderBrew() {
   return h('div', { class: 'app brew' },
     head('Brew', 'Coffee, delivered in 15 min'),
     h('div', { class: 'scroll', 'data-keep': 'brew' },
+      canTreat() && h('div', { class: 'treat-card' },
+        h('div', {}, h('b', {}, '☕ Coffee run for the team'), h('div', { class: 'small muted' }, `${TEAM_SIZE} coffees · $${TREAT_COST.coffee} · 🤝 morale up`)),
+        h('button', { class: 'btn primary', disabled: treatedToday('coffee'), onclick: coffeeRun }, treatedToday('coffee') ? '✓ Done today' : 'Send it')),
       h('div', { class: 'seg' },
         ...[...execs, 'me'].map((x) => h('button', { class: `seg-btn ${brewFor === x ? 'on' : ''}`, onclick: () => { brewFor = x; dirty(); } },
           x === 'me' ? '🙋 Me' : `${EXECS[x as ExecId].emoji} ${EXECS[x as ExecId].short}`)),
@@ -1346,6 +1349,7 @@ function renderCard$() {
 
 /** Where each kind of to-do gets done. */
 const TASK_APP: Record<string, AppId> = { coffee: 'brew', gift: 'bundl', reservation: 'tably', invoice: 'card' };
+const taskApp = (t: { kind: string; treat?: string }) => (t.kind === 'treat' ? (t.treat === 'lunch' ? 'tably' : 'brew') : TASK_APP[t.kind]) as AppId;
 
 function renderNotes() {
   const d = day();
@@ -1359,7 +1363,7 @@ function renderNotes() {
       openTasks.length + derived.length === 0 ? h('p', { class: 'muted small' }, S.tasks.length ? 'All done. For now.' : 'Nothing yet. Enjoy it.') : null,
       ...openTasks.map((t) => {
         const left = t.deadline - S.now;
-        const app = TASK_APP[t.kind];
+        const app = taskApp(t);
         return h('div', { class: `task open ${left <= 20 ? 'urgent' : ''}` },
           h('span', { class: 'task-box' }, '⬜'),
           h('span', { class: 'task-text' }, t.text.replace(/\s*\(by [^)]*\)/, ''),
@@ -1457,8 +1461,14 @@ function renderTrellis() {
 function renderTably() {
   const open = S.tasks.filter((x) => x.kind === 'reservation');
   return h('div', { class: 'app tably' },
-    head('Tably', 'Tonight'),
+    head('Tably', 'Lunch & dinner'),
     h('div', { class: 'scroll', 'data-keep': 'tably' },
+      canTreat() && h('div', { class: 'treat-card lunch' },
+        h('div', {}, h('b', {}, '🍽️ Team lunch'), h('div', { class: 'small muted' }, `${TEAM_SIZE} people · $${TREAT_COST.lunch} · 🤝 big morale boost · goes on the Team calendar`)),
+        treatedToday('lunch') ? h('span', { class: 'small muted' }, '✓ Booked today')
+        : h('div', { class: 'treat-slots' }, ...RESTAURANTS.filter((r) => r.id !== 'lucca').flatMap((r) => LUNCH_TIMES.filter((tm) => tm > S.now).slice(0, 2).map((tm) =>
+            h('button', { class: 'slot', onclick: () => teamLunch(r.id, tm) }, `${r.emoji} ${r.name} ${fmt(tm)}`))))),
+      h('h4', {}, 'Tonight'),
       ...open.map((x) => h('div', { class: `task ${x.status}` }, h('span', {}, x.status === 'done' ? '✅' : x.status === 'failed' ? '❌' : '⬜'), h('span', {}, x.text))),
       h('div', { class: 'stepper party' },
         h('span', { class: 'small muted lbl' }, 'Party'),

@@ -1,6 +1,6 @@
 import { DAYS, dayAt } from './days';
 import { drinkEmoji, drinkMatch, drinkName, drinkPrice } from './drinks';
-import { CAL_START, DAY_END, DAY_START, EXECS, PAYROLL, PREP_TIME, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, fmt } from './data';
+import { CAL_START, DAY_END, DAY_START, EXECS, PAYROLL, PREP_TIME, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, fmt, t } from './data';
 import {
   S, START_METERS, addStrike, applyEffects, banner, dirty, fmtMoney, readSave, uid, writeSave, clearSave,
   about, fxFor, relOf, REL_PEOPLE,
@@ -9,7 +9,7 @@ import { offerShortcut } from './shortcuts';
 import { generateAdhoc } from './adhoc';
 import { ticketsFor } from './tickets';
 import { weekdayBreathers, weekendPlans } from './weekend';
-import type { AppId, CalEvent, Effects, ExecId, Message, MsgDef, Script } from './types';
+import type { AppId, CalEvent, Effects, ExecId, KendallJob, Message, MsgDef, Script } from './types';
 
 export const day = () => dayAt(S.dayIndex);
 
@@ -448,7 +448,8 @@ function fire(s: Script) {
       break;
     }
     case 'kendall':
-      kendallAct(s.mode);
+      if (s.mode === 'job') kendallJob(s.job!);
+      else kendallAct(s.mode);
       break;
     case 'nudge': {
       const ev = findEvent(s.id);
@@ -989,6 +990,8 @@ const APP_OF: Record<string, AppId> = { mail: 'mail', huddle: 'huddle', messages
 /** You missed it, but it isn't over: they come back once, a bit later. Answering late still works, just for less upside. */
 function followUp(m: Message) {
   if (m.followUp || !m.choices) return;
+  // Chit-chat that went unanswered just fades; nobody chases you about Gary the pigeon.
+  if (m.timeoutEffects && !Object.keys(m.timeoutEffects).length) return;
   const at = Math.min(S.now + 35, DAY_END - 20);
   if (at <= S.now) return;
   const halfUp = (fx?: Effects): Effects => Object.fromEntries(Object.entries(fx ?? {}).map(([k, v]) => [k, (k === 'stress' ? (v as number) < 0 : (v as number) > 0) ? Math.round((v as number) / 2) : v]));
@@ -1047,6 +1050,10 @@ function chooseRaw(msgId: string, idx: number) {
     addMessage({ app: m.app, from: 'Margo', body: replies[Math.floor(Math.random() * replies.length)] }, true);
   } else applyEffects(c.effects, c.log ?? `${m.from}: "${c.label}"`);
   queueThen(c.then);
+  if (c.delegate) {
+    S.queue.push({ at: S.now + 15, type: 'kendall', mode: 'job', job: c.delegate });
+    S.queue.sort((a, b) => a.at - b.at);
+  }
   if (c.promise) {
     const p = c.promise;
     S.tasks.push({ id: `p-${m.id}`, kind: 'promise', text: p.text, recipient: m.from, deadline: Math.min(S.now + p.within, DAY_END - 5), reward: p.reward ?? { morale: 1 }, fail: p.fail, status: 'open' });
@@ -1117,12 +1124,86 @@ const HELP_SNIPES = [
   (t: string) => `"${t}" was unbooked so I just… did it. hope that's ok!! 🌸`,
 ];
 
+const JOB_LABEL: Record<KendallJob, string> = {
+  catering: 'Order catering for today',
+  coffee: 'Do a coffee run',
+  requests: 'Book some requests',
+  rides: 'Sort the Rydes',
+};
+/** How reliable Kendall is: kept simple, and it rides on team morale. */
+export const kendallOdds = () => (S.meters.morale >= 70 ? 0.9 : S.meters.morale >= 40 ? 0.75 : 0.5);
+
+const kTouch = (e: CalEvent) => e.status === 'scheduled' && e.start !== null && e.start > S.now + 20 && !e.departed && editable(e);
+const cateringNeeded = () => S.events.filter((e) => kTouch(e) && e.catering === 'wanted' && atOffice(e) && !e.withCatering);
+const ridesNeeded = () => (hasApp('ryde') ? S.events.filter((e) => kTouch(e) && travelOf(e) > 0 && !e.remote && !e.withRide && e.start! - travelOf(e) > S.now + 15) : []);
+const requestsWaiting = () => S.events.filter((e) => e.status === 'pending' && !e.fixed && !e.optional && !e.attendees.includes('me') && e.dueDay === undefined);
+/** What there is to hand over right now. */
+function kendallJobs(): KendallJob[] {
+  const out: KendallJob[] = [];
+  if (cateringNeeded().length) out.push('catering');
+  if (hasApp('brew') && (S.tasks.some((x) => x.status === 'open' && (x.kind === 'coffee' || (x.kind === 'treat' && x.treat === 'coffee'))) || (canTreat() && !treatedToday('coffee')))) out.push('coffee');
+  if (requestsWaiting().length) out.push('requests');
+  if (ridesNeeded().length) out.push('rides');
+  return out;
+}
+
+function kendallJob(job: KendallJob) {
+  const say = (body: string) => addMessage({ app: 'huddle', from: KENDALL, body });
+  if (Math.random() > kendallOdds()) {
+    const excuses = ['omg I got pulled into something, didn\'t get to it 😬 sorry!!', 'so I started… and then Margo needed me. it\'s not done. sorry 🙃', 'ok I forgot. I\'m human!! 🫠'];
+    return say(excuses[Math.floor(Math.random() * excuses.length)] + ` (${JOB_LABEL[job].toLowerCase()})`);
+  }
+  S.kendall.helped++;
+  if (job === 'catering') {
+    const list = cateringNeeded();
+    for (const e of list) { e.withCatering = true; e.editedBy = 'Kendall'; }
+    return say(list.length ? `catering ordered for ${list.map((e) => `"${e.title}"`).join(', ')} 🍱` : 'went to order catering but you\'d already done it? 😅');
+  }
+  if (job === 'coffee') {
+    const task = S.tasks.find((x) => x.status === 'open' && x.kind === 'coffee' && x.exec);
+    if (task) {
+      orderDrink(EXECS[task.exec!].drink, task.exec!, null);
+      return say(`sent ${EXECS[task.exec!].short} their usual ☕`);
+    }
+    coffeeRun();
+    return say('coffee run done!! the whole team loves me now. and you. mostly me ☕');
+  }
+  if (job === 'rides') {
+    const list = ridesNeeded();
+    for (const e of list) { toggleAddon(e.id, 'ride'); e.editedBy = 'Kendall'; }
+    return say(list.length ? `Rydes booked for ${list.map((e) => `"${e.title}"`).join(', ')} 🚕` : 'all the rides were already sorted!');
+  }
+  const booked: string[] = [];
+  for (const e of requestsWaiting().slice(0, 3)) {
+    const t = bestSlot(e);
+    if (t === null) continue;
+    const wasSel = S.selected;
+    placeEvent(e.id, t, true);
+    S.selected = wasSel === e.id ? null : wasSel;
+    e.editedBy = 'Kendall';
+    calNotice(e, `Booked: ${e.title}, ${fmt(t)}–${fmt(t + e.duration)}`);
+    booked.push(`"${e.title}" (${fmt(t)})`);
+  }
+  return say(booked.length ? `booked ${booked.join(', ')} 📅 double-check me if you want!` : 'couldn\'t find room for any of them 😬');
+}
+
 function kendallAct(mode: 'help' | 'sabotage') {
   const now = S.now;
   const touchable = (e: CalEvent) => e.status === 'scheduled' && e.start !== null && e.start > now + 30 && !e.fixed && !e.departed && e.kind !== 'focus' && !e.attendees.includes('me');
   const say = (body: string) => addMessage({ app: 'huddle', from: KENDALL, body });
 
   if (mode === 'help') {
+    const jobs = kendallJobs();
+    const odds = Math.round(kendallOdds() * 100);
+    if (jobs.length) {
+      addMessage({
+        app: 'huddle', from: KENDALL,
+        body: `free for a bit! what can I take off your plate? 🙂\n(Kendall gets it done about ${odds}% of the time. Better when morale is high.)`,
+        expiresIn: 30, timeoutEffects: {}, timeoutLog: 'Kendall found something else to do.',
+        choices: [...jobs.map((j) => ({ label: JOB_LABEL[j], effects: {}, delegate: j, log: `Asked Kendall to ${JOB_LABEL[j].toLowerCase()}.` })), { label: "I've got it, thanks", effects: {} }],
+      });
+      return;
+    }
     const pend = S.events.find((e) => e.status === 'pending' && !e.fixed && !e.attendees.includes('me'));
     if (pend) {
       const wasSel = S.selected;
@@ -1495,6 +1576,43 @@ export const bookings: Booking[] = [];
 export function slotTaken(restId: string, time: number) {
   const r = RESTAURANTS.find((x) => x.id === restId)!;
   return r.full.includes(time) || bookings.some((b) => b.restaurant === restId && b.time === time);
+}
+
+// ───────────────────────────── team treats ─────────────────────────────
+export const TEAM_SIZE = 8;
+export const TREAT_COST = { lunch: 28 * TEAM_SIZE, coffee: 6 * TEAM_SIZE };
+export const LUNCH_TIMES = [t('12:00'), t('12:30'), t('13:00')];
+export const treatedToday = (k: 'lunch' | 'coffee') => S.flags.includes(`treat-${k}-${S.dayIndex}`);
+export const canTreat = () => S.phase === 'day' && activeExecs().includes('team');
+
+/** Spend company money on the team. Morale goes up; the novelty wears off if you do it every day. */
+function treatTeam(k: 'lunch' | 'coffee', label: string) {
+  if (treatedToday(k) || !canTreat()) return false;
+  S.flags.push(`treat-${k}-${S.dayIndex}`);
+  const streak = [1, 2].filter((d) => S.flags.includes(`treat-${k}-${S.dayIndex - d}`)).length;
+  charge(label, TREAT_COST[k]);
+  const base = k === 'lunch' ? 7 : 3;
+  const task = S.tasks.find((x) => x.status === 'open' && x.kind === 'treat' && x.treat === k);
+  if (task) {
+    task.status = 'done';
+    fxFor(taskWho(task), task.reward, `Done: ${task.text}`, true);
+  }
+  applyEffects({ morale: Math.max(1, base - streak * 2) }, k === 'lunch' ? 'Team lunch. Everyone talked about something other than runway.' : 'Coffee run for the whole team. You are briefly a legend.');
+  return true;
+}
+
+/** A coffee run for the whole team, from Brew. */
+export function coffeeRun() {
+  if (treatTeam('coffee', `Brew · coffee run for the team (${TEAM_SIZE})`)) banner('brew', '☕ Coffee run', `${TEAM_SIZE} coffees on the way.`);
+}
+
+/** Team lunch at a restaurant, from Tably: it lands on the Team calendar too. */
+export function teamLunch(restId: string, time: number) {
+  const r = RESTAURANTS.find((x) => x.id === restId)!;
+  if (time <= S.now) return;
+  if (!treatTeam('lunch', `Tably · team lunch at ${r.name}`)) return;
+  S.events.push({ id: `tl-${S.dayIndex}`, title: `Team lunch · ${r.name} ${r.emoji}`, attendees: ['team'], start: time, duration: 60, baseDuration: 60, status: 'scheduled', fixed: true, kind: 'personal', travel: 10, place: r.name, fresh: true, note: 'On the company card. Morale already paid out.' });
+  banner('tably', '🍽️ Team lunch booked', `${r.name} · ${TEAM_SIZE} people · ${fmt(time)}`);
 }
 
 export function bookTable(restId: string, time: number, party: number) {

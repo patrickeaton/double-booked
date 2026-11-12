@@ -260,6 +260,23 @@ const TEAM_REQS: { key: string; from: string; app: InboxApp; title: string; body
   { key: 'survey', from: 'Bev (People Ops)', app: 'mail', title: 'Engagement survey results 📊', body: 'The engagement survey is back. {dur} to share it with the team {due}, with {exec}. Brace.', with: 'any', dur: 30, due: 'week', big: true },
 ];
 
+/** Just people being people. Replying is a small kindness; ignoring it costs nothing but warmth. */
+const CHATTER: { from: string; app: InboxApp; body: string; replies: [string, string]; work: boolean }[] = [
+  { from: 'Wren', app: 'huddle', body: 'someone left a whole cake in the kitchen with a note that just says "sorry". no context. eating it', replies: ['"Save me a slice"', '"Could be a trap"'], work: true },
+  { from: 'Ana (Customer Success)', app: 'huddle', body: 'a customer just sent us a photo of their fern wearing a tiny hat. I will be framing this', replies: ['"Frame it. Now."', '"The hat is a choice"'], work: true },
+  { from: 'Theo', app: 'huddle', body: 'the deploy went out and nothing broke. I don\'t trust it. why is it quiet', replies: ['"Enjoy it, Theo"', '"Knock on wood"'], work: true },
+  { from: 'Bev (People Ops)', app: 'huddle', body: 'Reminder that the kitchen fridge is cleared on Fridays. This is not a threat. It is a schedule.', replies: ['"Noted 🫡"', '"RIP my yoghurt"'], work: true },
+  { from: 'Margo', app: 'huddle', body: 'random but thank you for today. I know I\'m a lot. you\'re handling it 🌱', replies: ['"Happy to help"', '"You\'re… a normal amount"'], work: true },
+  { from: 'Wren', app: 'huddle', body: 'pigeon on the window ledge has been staring at me for 20 mins. we\'re friends now. his name is Gary', replies: ['"Hi Gary"', '"Gary is HR"'], work: true },
+  { from: 'Ana (Customer Success)', app: 'huddle', body: 'playlist for the afternoon slump? I need something that isn\'t lo-fi beats to cry to', replies: ['"ABBA. Always."', '"Sea shanties"'], work: true },
+  { from: 'Theo', app: 'huddle', body: 'found a mug on my desk that says "World\'s Okayest CTO". who did this. I\'m keeping it', replies: ['"No idea 😇"', '"It\'s accurate"'], work: true },
+  { from: 'Dana', app: 'huddle', body: 'The coffee machine has been fixed. I fixed it. Do not tell anyone; they will ask me to fix things.', replies: ['"Your secret\'s safe"', '"Hero"'], work: true },
+  { from: 'Jules ❤️', app: 'messages', body: 'thinking about you being busy and important 🥺 also what do we want for dinner', replies: ['"Pasta. Always pasta."', '"Surprise me ❤️"'], work: false },
+  { from: 'Ollie', app: 'messages', body: 'mate. I just saw a dog on a skateboard. not doing anything with this info just needed you to know', replies: ['"Video or it didn\'t happen"', '"Living the dream"'], work: false },
+  { from: 'Mum', app: 'messages', body: 'Hi love. Just saw a programme about plants and thought of you. Are you eating? xx Mum', replies: ['"Yes Mum ❤️"', '"Define eating"'], work: false },
+  { from: 'Jules ❤️', app: 'messages', body: 'the neighbour\'s cat got into our flat again. he\'s on the bed. he lives here now I guess', replies: ['"Name him"', '"He pays rent?"'], work: false },
+];
+
 /** Small asks you can say yes to. Yes puts a promise in Notes; no costs a little goodwill now. */
 const FAVOURS: { key: string; from: string; app: InboxApp; body: string; yes: string; no: string; todo: string; within: number }[] = [
   { key: 'deck', from: 'Ana (Customer Success)', app: 'huddle', body: 'can you send me the Q1 deck? the REAL one, not "Q1 final final v3"', yes: '"On it"', no: '"Ask Margo?"', todo: 'Send Ana the real Q1 deck', within: 60 },
@@ -308,6 +325,10 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
     for (let i = 0; i < d.adhoc && pool.length; i++) {
       const w = pool.splice(Math.floor(r() * pool.length), 1)[0];
       out.push({ at: q15(t('9:30') + r() * 7 * 60) + Math.floor(r() * 10), type: 'msg', msg: { app: w.app, from: w.from, body: w.body, choices: w.choices, expiresIn: 60, timeoutEffects: w.timeout, timeoutLog: w.timeoutLog } });
+    }
+    // Friends and family check in too.
+    for (const c of CHATTER.filter((x) => !x.work).sort(() => r() - 0.5).slice(0, 2)) {
+      out.push({ at: q15(t('9:30') + r() * 7 * 60), type: 'msg', msg: { app: c.app, from: c.from, body: c.body, expiresIn: 60, timeoutEffects: {}, timeoutLog: `${c.from.split(' ')[0]} didn't hear back.`, choices: c.replies.map((label) => ({ label, effects: { stress: -2 } })) } });
     }
     // The bosses don't really believe in weekends either.
     const who = d.execs.filter(isBoss);
@@ -359,6 +380,8 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
     ...(has('bundl') ? [['gift', 1] as [string, number]] : []),
     ...(has('tably') ? [['table', 1] as [string, number]] : []),
     ['favour', 1.4],
+    ['chat', 2],
+    ...(d.execs.includes('team') && (has('brew') || has('tably')) ? [['treat', 1.1] as [string, number]] : []),
     ...(has('card') ? [['invoice', 0.9] as [string, number]] : []),
   ];
   const total = kinds.reduce((a, [, w]) => a + w, 0);
@@ -523,6 +546,28 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
             { label: f.no, effects: { morale: -1 } },
           ],
         },
+      });
+    } else if (kind === 'chat') {
+      const opts = CHATTER.filter((c) => !used.has(c.body) && (c.from !== 'Dana' || bosses.includes('dana')) && (c.from !== 'Theo' || bosses.includes('theo')));
+      if (!opts.length) continue;
+      const c = pick(r, opts);
+      used.add(c.body);
+      out.push({
+        at, type: 'msg',
+        msg: { app: c.app, from: c.from, body: c.body, expiresIn: 40, timeoutEffects: {}, timeoutLog: `${c.from.split(' ')[0]} didn't hear back. No harm done.`, choices: c.replies.map((label) => (c.work ? { label, effects: { morale: 1 } } : { label, effects: { stress: -2 } })) },
+      });
+    } else if (kind === 'treat') {
+      if (used.has('treat')) continue;
+      used.add('treat');
+      const lunch = has('tably') && at < t('11:15') && chance(r, 0.6);
+      if (!lunch && !has('brew')) continue;
+      const by = lunch ? t('12:00') : Math.min(q15(at + 90), t('16:00'));
+      out.push({
+        at, type: 'task',
+        task: { id: id(), kind: 'treat', treat: lunch ? 'lunch' : 'coffee', text: lunch ? `Book a team lunch on Tably (by ${fmt(by)})` : `Coffee run for the team (by ${fmt(by)})`, deadline: by, reward: { morale: 2 }, fail: { morale: -4 } },
+        msg: lunch
+          ? { app: 'huddle', from: 'Bev (People Ops)', body: `The team is flagging. Could you book a team lunch somewhere today? Tably, before ${fmt(by)}. On the company card. Margo approved it. (Margo doesn't know yet.)` }
+          : { app: 'huddle', from: 'Wren', body: `is anyone doing a coffee run?? the whole team is running on fumes. before ${fmt(by)}? 🥺` },
       });
     } else if (kind === 'invoice') {
       if (used.has('invoice')) continue;
