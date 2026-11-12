@@ -8,6 +8,7 @@ import { offerShortcut } from './shortcuts';
 import { generateAdhoc } from './adhoc';
 import { ticketsFor } from './tickets';
 import { weekdayBreathers, weekendPlans } from './weekend';
+import { GROUPS, SPECIFIC } from './replies';
 import type { AppId, CalEvent, Effects, ExecId, KendallJob, Message, MsgDef, Script } from './types';
 
 export const day = () => dayAt(S.dayIndex);
@@ -1065,30 +1066,10 @@ function chooseRaw(msgId: string, idx: number) {
 }
 
 // ───────────────────────────── friendly replies ─────────────────────────────
-/** Friendly replies, grouped by what the message is actually doing. First match wins. */
-const REPLY_GROUPS: { test: RegExp; chat: string[]; mail?: string[]; life?: string[] }[] = [
-  // Introductions
-  { test: /welcome|heard you're|nice to meet|first day|new here|I'm the|, (CTO|COO|CEO)\b|joins as/i,
-    chat: ['"Nice to meet you! 👋"', '"Looking forward to it 🙂"', '"Can\'t wait to find out 😅"'], mail: ['"Lovely to meet you."', '"Thanks for the welcome!"'] },
-  // They're asking you for something (often a to-do already)
-  { test: /\b(can you|could you|would you|please|need (you|a|the|someone)|coffee|book|send|get me)\b|\?\s*$/i,
-    chat: ['"On it 👍"', '"Leave it with me"', '"Coming right up"', '"Consider it done"'], mail: ['"On it."', '"Will do, thanks."'], life: ['"On it ❤️"', '"Leave it with me"'] },
-  // Thanks / praise
-  { test: /\b(thank|thanks|appreciate|grateful|you're the best|nice work|great job|killing it)\b/i,
-    chat: ['"Anytime!"', '"Of course 🙂"', '"Happy to help!"'], mail: ['"My pleasure."', '"Anytime."'], life: ['"Love you ❤️"', '"Anytime 🥰"'] },
-  // Something went wrong, or someone is struggling
-  { test: /\b(sorry|ugh|down|broke|broken|fire|late|stuck|can't sleep|stress|panic|cancel|failed|worried|upset)\b|😬|🔥|😭|🫠|😩/i,
-    chat: ['"Oh no. Here if you need anything"', '"Hang in there 💪"', '"We\'ll sort it"'], mail: ['"Sorry to hear that. How can I help?"', '"Understood. I\'ll keep an eye on it."'], life: ['"Oh no ❤️ call you later?"', '"Sending a hug"'] },
-  // Good news
-  { test: /\b(paid|shipped|won|signed|offer|great news|yay|love|perfect|amazing|finally|found|got it|we did it)\b|!!|🎉|🙌|❤️|🥳|💸|🚀/i,
-    chat: ['"Amazing! 🎉"', '"Love that"', '"Huge!"'], mail: ['"Great news, thank you!"', '"Wonderful."'], life: ['"Yay!! ❤️"', '"I love that"'] },
-  // Jokes and nonsense
-  { test: /\b(lol|lmao|jk|haha|pigeon|cake|hat|fern|mug|dog|cat)\b|😂|🙃|💅/i,
-    chat: ['"Ha! 😂"', '"Stop it 😂"', '"Iconic"'], life: ['"😂😂"', '"Stop it"'] },
-  // Everything else: information
-  { test: /./,
-    chat: ['"Thanks for the heads-up 🙂"', '"Noted 👍"', '"Good to know"'], mail: ['"Thanks, received."', '"Noted, thank you."'], life: ['"Noted ❤️"', '"Good to know x"'] },
-];
+/** The pair of replies each message offers, picked once so they don't shuffle on every render. */
+const replyPicks = new Map<string, string[]>();
+/** Replies offered recently: the next message avoids them, so you don't see the same pair twice running. */
+const recentReplies: string[] = [];
 
 /** Who a message is from, if it's someone you can get to know. */
 export const replyKey = (m: Message) => (m.from.startsWith('Your ') || m.from.startsWith('Accounts') ? null : peopleIn([m.from])[0] ?? null);
@@ -1098,12 +1079,22 @@ export function friendlyReplies(m: Message): string[] {
   // Only the latest message from them in this app gets a reply.
   const last = S.messages.filter((x) => x.app === m.app && x.from === m.from).pop();
   if (last !== m) return [];
-  const g = REPLY_GROUPS.find((x) => x.test.test(m.body))!;
+  const hit = replyPicks.get(m.id);
+  if (hit) return hit;
+  const specific = SPECIFIC.find(([phrase]) => m.body.includes(phrase))?.[1];
+  const g = GROUPS.find((x) => x.test.test(m.body))!;
   const life = PERSONAL.includes(replyKey(m) ?? '');
-  const pool = (m.app === 'mail' ? g.mail : life ? g.life : null) ?? g.chat;
-  let h = 0;
-  for (const ch of m.id) h = (h * 31 + ch.charCodeAt(0)) % 997;
-  return [pool[h % pool.length], pool[(h + 1) % pool.length]];
+  const pool = specific ?? (m.app === 'mail' ? g.mail : life ? g.life : null) ?? g.chat;
+  // Prefer replies you haven't seen lately; if they've all come up, the longest-ago ones.
+  const fresh = pool.filter((x) => !recentReplies.includes(x));
+  const from = fresh.length >= 2 ? fresh : [...pool].sort((a, b) => recentReplies.lastIndexOf(a) - recentReplies.lastIndexOf(b)).slice(0, 2);
+  const picked: string[] = [];
+  const bag = [...from];
+  while (picked.length < 2 && bag.length) picked.push(bag.splice(Math.floor(Math.random() * bag.length), 1)[0]);
+  recentReplies.push(...picked);
+  while (recentReplies.length > 8) recentReplies.shift();
+  replyPicks.set(m.id, picked);
+  return picked;
 }
 /** Saying something nice. Builds a little goodwill, once per person per day. */
 export function replyFriendly(msgId: string, text: string) {
