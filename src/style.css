@@ -558,3 +558,46 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
   .status-left { display: none; }
   .status-center { align-items: flex-start; }
 }
+
+/* Day navigation on the calendar */
+.daynav { display: inline-flex; align-items: center; gap: 2px; background: #ece8de; border-radius: 99px; padding: 2px; flex: none; }
+.daynav-btn { width: 30px; height: 28px; border-radius: 99px; font-size: 20px; font-weight: 800; line-height: 1; display: grid; place-items: center; }
+.daynav-btn:disabled { opacity: 0.3; }
+.daynav-label { font-size: 12px; font-weight: 800; padding: 0 6px; min-width: 74px; text-align: center; display: inline-flex; gap: 4px; align-items: center; justify-content: center; white-space: nowrap; }
+.daynav.away { background: var(--ink); color: #fff; }
+.daynav.away .daynav-btn { color: #fff; }
+.cal-inner.other-day .cal-grid { background-image: repeating-linear-gradient(135deg, transparent 0 14px, rgba(0, 0, 0, 0.025) 14px 28px); }
+.evt.readonly { opacity: 0.6; filter: saturate(0.6); }
+.past-day .evt.readonly { opacity: 0.75; }
+.evt.ahead { outline: 2px dashed var(--c); outline-offset: -2px; }
+.tag.due { background: #e8f0ff; color: #1d4ed8; }
+.tag.due.bad { background: #ffe1dc; color: #b42318; }
+
+/* ───────── phone: the page itself scrolls, so iOS Safari can tuck its bars away ───────── */
+@media (max-width: 819px) {
+  html, body { height: auto; }
+  body { overscroll-behavior-y: auto; background: var(--surface); }
+  #app { display: block; height: auto; }
+  .device { height: auto; min-height: 100dvh; overflow: visible; padding-top: 0; }
+  .statusbar { position: sticky; top: 0; z-index: 30; background: var(--surface); padding-top: calc(6px + env(safe-area-inset-top)); }
+  .dock { position: sticky; bottom: 0; z-index: 30; background: var(--surface); box-shadow: 0 -1px 0 var(--line); }
+  .main { flex: 1 0 auto; min-height: 0; }
+  .pane { overflow: clip; }
+  .app, .scroll, .tp-detail > .scroll { min-height: auto; }
+  .scroll { flex: 1 0 auto; overflow: visible; }
+  .app-head { position: sticky; top: var(--status-h, 44px); z-index: 12; background: var(--card); }
+  .cal .app-head { position: static; }
+  .cal-scroll { flex: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  .cal-scroll::-webkit-scrollbar { display: none; }
+  .cal-sticky { position: sticky; top: var(--status-h, 44px); z-index: 14; background: var(--card); }
+  .cal-sticky .pickbar, .cal-sticky .lockbar { margin-top: 4px; }
+  .cal-heads-wrap { overflow: hidden; padding-right: 10px; }
+  .heads-strip { will-change: transform; }
+  .heads-strip .cal-heads { position: static; }
+  .drawer-wrap { position: fixed; z-index: 45; }
+  .overlay, .banners, .toasts { position: fixed; }
+}
+@media (max-width: 819px) {
+  .cal-heads-wrap { position: relative; }
+  .cal-heads-wrap::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 44px; background: var(--card); z-index: 2; }
+}

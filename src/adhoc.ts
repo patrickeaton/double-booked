@@ -56,6 +56,17 @@ const MEETINGS: MeetT[] = [
   { key: 'podcast', from: 'Rooted (podcast)', app: 'mail', title: 'Podcast · "Rooted"', body: 'Could {exec} join "Rooted" for {dur}? Before {by}. We can do it remote… but the vibes are better in the studio.', who: 'margo', dur: [45], stakes: 'mid', travel: [20, 'Rooted studio', 'Rooted’s new studio (a houseboat)'], remoteOk: 'meh' },
 ];
 
+/** Not urgent: any day up to the deadline. `due`: 'week' = by Friday, or a number of days. */
+const LATER: { key: string; from: string; app: InboxApp; title: string; body: string; who: ExecId | 'any' | 'both'; dur: number; stakes: 'low' | 'mid' | 'high'; due: 'week' | number }[] = [
+  { key: 'qbr', from: 'Ana (Customer Success)', app: 'mail', title: 'QBR · Greenleaf', body: 'Greenleaf want their quarterly review with {exec}. {dur}, any time {due}. They will bring slides. Many slides.', who: 'margo', dur: 60, stakes: 'high', due: 'week' },
+  { key: 'perf', from: 'Bev (People Ops)', app: 'mail', title: 'Perf calibration', body: 'Need {dur} with {exec} for perf calibration {due}. Bring opinions. Leave feelings at the door 💐', who: 'both', dur: 45, stakes: 'mid', due: 'week' },
+  { key: 'roadmap', from: 'Theo', app: 'huddle', title: 'Roadmap review', body: 'can you find {dur} for a roadmap review {due}? not urgent. it\'s a bit urgent.', who: 'theo', dur: 60, stakes: 'mid', due: 3 },
+  { key: 'offsite', from: 'Margo', app: 'huddle', title: 'Offsite planning 🏕️', body: 'we need an OFFSITE. {dur} to plan it {due}. I\'m thinking yurts. don\'t tell Dev', who: 'margo', dur: 45, stakes: 'low', due: 'week' },
+  { key: 'skip', from: 'Wren', app: 'huddle', title: 'Skip-level · Wren', body: 'could I get {dur} with {exec} {due}? nothing bad. probably. it\'s fine 🙂', who: 'any', dur: 30, stakes: 'mid', due: 2 },
+  { key: 'audit', from: 'Dev (Finance)', app: 'mail', title: 'Expense audit', body: '{exec}: {dur} to go through expenses {due}. There is a $400 kombucha line. We need to talk about it. — Dev', who: 'margo', dur: 30, stakes: 'mid', due: 4 },
+  { key: 'partner', from: 'Priya (Sales)', app: 'huddle', title: 'Partner call · Bloomly', body: 'Bloomly want {dur} with {exec} {due}. could be big. could be a waste. that\'s sales baby 💅', who: 'any', dur: 30, stakes: 'high', due: 3 },
+];
+
 const SELF_BOOKS: { title: string; body: string; who: ExecId; kind?: 'personal' }[] = [
   { title: 'Call w/ lawyer ⚖️', body: "put a call w/ the lawyer at {at}. don't ask. don't move it.", who: 'margo' },
   { title: 'Kombucha tasting 🍵', body: 'booked a kombucha tasting at {at}. it is a BUSINESS MEETING. probably.', who: 'margo', kind: 'personal' },
@@ -257,7 +268,7 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
 
   const used = new Set<string>();
   const kinds: [string, number][] = [
-    ['meeting', 4], ['dilemma', 3], ['call', 1], ['self', 1],
+    ['meeting', 4], ['dilemma', 3], ['call', 1], ['self', 1], ...(d.weekend ? [] : [['later', 1.6] as [string, number]]),
     ...(d.execs.includes('me') ? [['errand', 1.2] as [string, number], ['mywork', 1.5] as [string, number]] : []),
     ...(d.execs.includes('margo') && dayIndex >= 2 ? [['advice', 1.5] as [string, number]] : []),
     ...(has('brew') ? [['coffee', 1] as [string, number]] : []),
@@ -273,10 +284,38 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
   };
   const names = (xs: ExecId[]) => xs.map((x) => ({ margo: 'Margo', theo: 'Theo', dana: 'Dana', me: 'you', team: 'everyone' })[x]).join(' & ');
 
+  // Every weekday from Day 2 brings at least one "sometime this week" request, on top of the usual.
+  const laterAt = !d.weekend && dayIndex >= 1 ? t('9:30') + Math.floor(r() * (t('14:00') - t('9:30'))) : -1;
+  if (laterAt >= 0) { times.push(laterAt); times.sort((a, b) => a - b); }
   for (const at of times) {
     let kind = 'dilemma';
     let roll = r() * total;
     for (const [k, w] of kinds) { if ((roll -= w) < 0) { kind = k; break; } }
+    if (at === laterAt) kind = 'later';
+
+    if (kind === 'later') {
+      const opts = LATER.filter((m) => !used.has(m.key) && execAt(m.who));
+      if (!opts.length) continue;
+      const m = pick(r, opts);
+      used.add(m.key);
+      const att = execAt(m.who)!;
+      // Day 0 is a Wednesday. "This week" = by Friday (next Friday if that's under two days away).
+      const dow = (3 + dayIndex) % 7;
+      let due = m.due === 'week' ? (5 - dow + 7) % 7 : m.due;
+      if (m.due === 'week' && due < 2) due += 7;
+      let dueDay = dayIndex + due;
+      while ([0, 6].includes((3 + dueDay) % 7)) dueDay++;
+      const dayName = new Date(2026, 2, 4 + dueDay).toLocaleDateString('en-GB', { weekday: 'long' });
+      const st = STAKES[m.stakes];
+      const ev: EventDef = {
+        id: id(), title: m.title, attendees: att, start: null, duration: m.dur, dueDay,
+        reward: st.reward, missPenalty: st.miss, declinePenalty: st.decline, noBump: true,
+        note: `Any day up to ${dayName}.`,
+      };
+      const body = m.body.replace('{exec}', names(att)).replace('{dur}', `${m.dur} min`).replace('{due}', m.due === 'week' ? `this week (by ${dayName})` : `by ${dayName}`);
+      out.push({ at, type: 'request', event: ev, msg: { app: m.app, from: m.from, subject: m.app === 'mail' ? m.title : undefined, body } });
+      continue;
+    }
 
     if (kind === 'meeting') {
       const opts = [...MEETINGS, ...DANA_MEETINGS].filter((m) => !used.has(m.key) && execAt(m.who));

@@ -29,6 +29,10 @@ export interface GameState {
   incoming: CalEvent[];
   /** Meetings pushed today, landing tomorrow. */
   carry: CalEvent[];
+  /** Meetings you've booked on later days (by absolute day index). */
+  future: Record<number, CalEvent[]>;
+  /** What earlier days' calendars ended up looking like (read-only). */
+  past: Record<number, CalEvent[]>;
   messages: Message[];
   call: CallState | null;
   tasks: Task[];
@@ -75,6 +79,8 @@ export const S: GameState = {
   events: [],
   incoming: [],
   carry: [],
+  future: {},
+  past: {},
   messages: [],
   call: null,
   tasks: [],
@@ -180,11 +186,11 @@ export function saveCalPrefs() {
 
 // ───────────── save / load ─────────────
 const KEY = 'double-booked-save-v1';
-export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[]; shortcuts?: Shortcut[]; seed?: number; endless?: boolean; savedDrinks?: string[]; messages?: Message[]; kendall?: { helped: number; sabotaged: number } }
+export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[]; shortcuts?: Shortcut[]; seed?: number; endless?: boolean; savedDrinks?: string[]; messages?: Message[]; kendall?: { helped: number; sabotaged: number }; future?: Record<number, CalEvent[]>; past?: Record<number, CalEvent[]> }
 
 export function writeSave() {
   try {
-    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming, shortcuts: S.shortcuts, seed: S.seed, endless: S.endless, savedDrinks: S.savedDrinks, messages: S.messages, kendall: S.kendall };
+    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming, shortcuts: S.shortcuts, seed: S.seed, endless: S.endless, savedDrinks: S.savedDrinks, messages: S.messages, kendall: S.kendall, future: S.future, past: S.past };
     localStorage.setItem(KEY, JSON.stringify(s));
   } catch {
     /* storage may be unavailable */

@@ -32,7 +32,7 @@ export const DAYS: DayDef[] = [
     title: 'Welcome to Sproutly',
     weekday: 'Wed',
     adhoc: 1,
-    apps: ['calendar', 'huddle', 'notes', 'brew', 'pulse'],
+    apps: ['calendar', 'mail', 'huddle', 'messages', 'notes', 'brew', 'pulse'],
     subtitle: 'The AI that talks to your houseplants.',
     memo: {
       from: 'Bev (People Ops)',
@@ -105,13 +105,13 @@ export const DAYS: DayDef[] = [
     title: 'Two Bosses',
     weekday: 'Thu',
     adhoc: 2,
-    apps: ['mail', 'messages'],
+    apps: [],
     subtitle: 'Theo has entered the chat.',
     memo: {
       from: 'Bev (People Ops)',
       subject: 'New policy + new boss',
       body:
-        "Two things!\n\n1. Margo read a book on productivity. Effective today: no meeting may run longer than 60 minutes.\n\n2. You're now also managing Theo (CTO). His 1–5pm focus block is non-negotiable. Last EA who touched it now works at a llama farm. (Happily, we hear.)\n\n3. IT set up your Mail and Messages. The rest of your apps are \"in the pipeline\".",
+        "Two things!\n\n1. Margo read a book on productivity. Effective today: no meeting may run longer than 60 minutes.\n\n2. You're now also managing Theo (CTO). His 1–5pm focus block is non-negotiable. Last EA who touched it now works at a llama farm. (Happily, we hear.)",
     },
     execs: ['margo', 'theo'],
     rules: ['margoMorning', 'theoFocus', 'max60'],

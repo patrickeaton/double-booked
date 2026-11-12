@@ -79,6 +79,10 @@ export interface CalEvent {
   editedBy?: string;
   /** Flag set when this meeting happens. */
   flagOnDone?: string;
+  /** Can happen any day up to and including this one (absolute day index). Without it, it's today or never. */
+  dueDay?: number;
+  /** A copy of a meeting that got missed, back in the tray to be rebooked. */
+  rescheduled?: boolean;
 }
 
 export type EventDef = Omit<CalEvent, 'status'>;

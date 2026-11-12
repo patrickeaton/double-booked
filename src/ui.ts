@@ -1,10 +1,10 @@
 import { DAYS, dayAt } from './days';
 import { STEP_LABEL, drinkEmoji, drinkName, drinkPrice, optionsFor, specString, stepsFor, type DrinkSpec, type Step } from './drinks';
-import { CAL_END, CAL_START, DAY_END, EXECS, isBoss, PAYROLL, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, TABLE_TIMES, fmt } from './data';
+import { CAL_END, CAL_START, DAY_END, DAY_START, EXECS, isBoss, PAYROLL, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, TABLE_TIMES, fmt } from './data';
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
   minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
-  toggleSpeed, unschedule,
+  toggleSpeed, unschedule, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
 } from './engine';
 import { avatarEl } from './avatars';
 import { coffeeOf, metPeople, statusOf } from './people';
@@ -87,6 +87,7 @@ function keepScroll(container: HTMLElement, build: () => void) {
       const count = Number(el.dataset.count);
       if (prev === undefined || count > prev) {
         el.scrollTop = el.scrollHeight;
+        if (!split.matches && prev !== undefined) requestAnimationFrame(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' }));
         stickCounts.set(k, count);
         return;
       }
@@ -108,12 +109,19 @@ function winCtrls(isSplit: boolean) {
   );
 }
 
+let lastWhere = '';
+
 function render() {
   const isSplit = split.matches;
   refs.device.classList.toggle('is-split', isSplit);
   refs.device.classList.toggle('is-day', S.phase === 'day');
 
   refs.status.replaceChildren(renderStatus());
+  if (!isSplit) {
+    refs.device.style.setProperty('--status-h', `${refs.status.offsetHeight}px`);
+    const where = `${S.app}|${S.openMail ?? ''}|${S.phase}`;
+    if (where !== lastWhere) { lastWhere = where; window.scrollTo(0, 0); }
+  }
   refs.device.classList.toggle('tense', S.phase === 'day' && S.meters.stress >= 60 && S.meters.stress < 80);
   refs.device.classList.toggle('frazzled', S.phase === 'day' && S.meters.stress >= 80);
 
@@ -135,7 +143,12 @@ function render() {
     const sc = refs.main.querySelector<HTMLElement>('.cal-scroll');
     const ev = findEvent(S.selected);
     const target = ev?.start ?? scrollTarget;
-    if (sc) sc.scrollTo({ top: Math.max(0, (target - CAL_START - 30) * PX), behavior: 'smooth' });
+    if (sc && !isSplit) {
+      // Page scroll: put the target just under the sticky bars.
+      const top = sc.getBoundingClientRect().top + window.scrollY + (target - CAL_START - 30) * PX;
+      const covered = (document.querySelector('.cal-sticky') as HTMLElement | null)?.offsetHeight ?? 0;
+      window.scrollTo({ top: Math.max(0, top - refs.status.offsetHeight - covered), behavior: 'smooth' });
+    } else if (sc) sc.scrollTo({ top: Math.max(0, (target - CAL_START - 30) * PX), behavior: 'smooth' });
     scrollTarget = null;
   }
 
@@ -357,11 +370,54 @@ function renderDock(isSplit: boolean) {
 }
 
 // ───────────────────────────── calendar ─────────────────────────────
+// ───── which day the calendar is showing ─────
+let viewDay = 0;
+let viewFor = -1;
+/** Events for a day that isn't today: what you've booked ahead, plus what's already on the calendar that day. */
+function eventsOn(i: number): CalEvent[] {
+  if (i === S.dayIndex) return S.events;
+  if (i < S.dayIndex) return S.past[i] ?? [];
+  const known = dayAt(i).events
+    .filter((e) => (e.start ?? e.proposed ?? null) !== null)
+    .map((e): CalEvent => ({ ...e, id: `pv${i}-${e.id}`, start: e.start ?? e.proposed ?? null, status: 'scheduled', fixed: true }));
+  return [...known, ...(S.future[i] ?? [])];
+}
+const shortDate = (i: number) => new Date(2026, 2, 4 + i).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' });
+
+function renderDayNav() {
+  const lo = Math.max(0, S.dayIndex - 7);
+  const hi = lastViewDay();
+  const go = (i: number) => { viewDay = Math.max(lo, Math.min(hi, i)); dirty(); };
+  const label = viewDay === S.dayIndex ? 'Today' : viewDay === S.dayIndex + 1 ? 'Tomorrow' : viewDay === S.dayIndex - 1 ? 'Yesterday' : shortDate(viewDay);
+  const booked = (S.future[viewDay] ?? []).length;
+  return h('div', { class: `daynav ${viewDay !== S.dayIndex ? 'away' : ''}` },
+    h('button', { class: 'daynav-btn', disabled: viewDay <= lo, onclick: () => go(viewDay - 1), 'aria-label': 'Previous day' }, '‹'),
+    h('button', { class: 'daynav-label', onclick: () => go(S.dayIndex), title: 'Back to today' },
+      label, isWeekendDay(viewDay) && ' 🌴', booked > 0 && viewDay > S.dayIndex && h('span', { class: 'start-count' }, booked)),
+    h('button', { class: 'daynav-btn', disabled: viewDay >= hi, onclick: () => go(viewDay + 1), 'aria-label': 'Next day' }, '›'),
+  );
+}
+
+/** Selection bar for a meeting you've booked on a later day. */
+function renderAheadSelection(e: CalEvent, onDay: number) {
+  return h('div', { class: 'selbar' },
+    h('div', { class: 'selbar-top' }, h('b', {}, e.title),
+      h('span', { class: 'muted small nowrap' }, `${e.attendees.map((a) => EXECS[a].short).join(' & ')} · ${dayDate(onDay)} · ${fmt(e.start!)}`)),
+    e.dueDay !== undefined && h('div', { class: 'small note' }, `Due by ${dayDate(e.dueDay)}. Drag it to move it, or flip days and drop it there.`),
+    h('div', { class: 'selbar-actions' }, h('span', { class: 'spacer' }),
+      h('button', { class: 'btn', onclick: () => unbookFuture(e.id) }, 'Unbook'),
+      h('button', { class: 'btn icon', onclick: () => select(null), 'aria-label': 'Cancel' }, '✕')),
+  );
+}
+
 function renderCalendar() {
   const d = day();
   const execs = visibleExecs();
   const pending = S.events.filter((e) => e.status === 'pending');
-  const sel = findEvent(S.selected);
+  if (viewFor !== S.dayIndex) { viewFor = S.dayIndex; viewDay = S.dayIndex; }
+  const today = viewDay === S.dayIndex;
+  const ahead = findFuture(S.selected);
+  const sel = findEvent(S.selected) ?? ahead?.e ?? null;
   // Phone: a newly tapped event opens its details in the sidecar; tablet keeps the inline bar.
   if (S.selected !== lastSel) {
     lastSel = S.selected;
@@ -373,10 +429,9 @@ function renderCalendar() {
   const header = h('header', { class: 'app-head' },
     h('h2', { class: 'cal-title' }, 'Calendar',
       activeExecs().length > 1 && h('button', { class: 'cal-manage', onclick: () => { calSheet = true; dirty(); } }, '☰ Calendars', hiddenN > 0 && h('span', { class: 'start-count', title: `${hiddenN} hidden` }, `−${hiddenN}`))),
-    S.phase === 'prep'
-      ? h('span', { class: 'muted' }, 'Plan before 9am')
-      : h('span', { class: 'muted' }, S.phase === 'day' ? (d.weekend ? '🌴 Weekend. Technically.' : `${fmt(S.now)} · ends ${fmt(DAY_END)}`) : ''),
+    renderDayNav(),
   );
+  void d;
 
   // Tablet: an inline tray. Phone: a button that opens a sidecar drawer (it closes as soon as you drag).
   const tray = split.matches
@@ -395,7 +450,7 @@ function renderCalendar() {
           h('div', { class: 'drawer-head' }, h('b', {}, sel.status === 'pending' ? 'Book it' : 'Details'),
             h('button', { class: 'win-btn', onclick: () => select(null) }, '✕')),
           h('div', { class: 'drawer-cards', 'data-keep': 'detail' },
-            renderSelection(sel),
+            ahead ? renderAheadSelection(sel, ahead.day) : renderSelection(sel),
             (sel.status === 'pending' || (sel.status === 'scheduled' && !sel.fixed)) &&
               h('button', { class: 'btn big pick-time', onclick: () => { detailOpen = false; dirty(); } }, '👆 Pick a time on the calendar'),
             h('p', { class: 'muted small' }, 'Or drag it on the calendar. This panel gets out of the way.'))))
@@ -412,10 +467,10 @@ function renderCalendar() {
 
   const phone = !split.matches;
   const selBar = !sel ? null
-    : !phone ? renderSelection(sel)
+    : !phone ? (ahead ? renderAheadSelection(sel, ahead.day) : renderSelection(sel))
     : detailOpen ? null
     : h('div', { class: 'pickbar' },
-        h('span', {}, '👆 Tap a time for ', h('b', {}, sel.title)),
+        h('span', {}, '👆 Tap a time', today ? '' : ` on ${shortDate(viewDay)}`, ' for ', h('b', {}, sel.title)),
         h('button', { class: 'btn', onclick: () => { detailOpen = true; dirty(); } }, 'Details'),
         h('button', { class: 'btn', onclick: () => select(null) }, '✕'));
 
@@ -434,13 +489,13 @@ function renderCalendar() {
     const col = h('div', { class: 'cal-col', 'data-exec': x, style: `height:${height}px; --c:${EXECS[x].color}` });
     col.append(h('div', { class: 'off-hours', style: `top:0;height:${(t9() - CAL_START) * PX}px` }));
     col.append(h('div', { class: 'off-hours', style: `top:${(DAY_END - CAL_START) * PX}px;height:${(CAL_END - DAY_END) * PX}px` }));
-    if (S.phase === 'day') {
+    if (S.phase === 'day' && today) {
       col.append(h('div', { class: 'past', style: `top:0;height:${(S.now - CAL_START) * PX}px` }));
     }
-    const shown = S.events.filter((e) => e.start !== null && e.attendees.includes(x) && e.status !== 'declined');
+    const shown = eventsOn(viewDay).filter((e) => e.start !== null && e.attendees.includes(x) && e.status !== 'declined' && e.status !== 'bumped');
     const lanes = layoutLanes(shown.filter((e) => e.kind !== 'focus'));
     for (const e of shown) {
-      const pieces = [renderBlock(e)];
+      const pieces = [today ? renderBlock(e) : renderOtherBlock(e)];
       const tr = travelOf(e);
       if (tr && e.status !== 'missed') {
         pieces.push(h('div', { class: 'travel', style: `top:${(e.start! - tr - CAL_START) * PX}px;height:${tr * PX}px;--c:${EXECS[e.attendees[0]].color}` }, '🚗'));
@@ -456,30 +511,41 @@ function renderCalendar() {
         col.append(el);
       }
     }
-    if (S.phase === 'day') col.append(h('div', { class: 'now-line', style: `top:${(S.now - CAL_START) * PX}px` }));
+    if (S.phase === 'day' && today) col.append(h('div', { class: 'now-line', style: `top:${(S.now - CAL_START) * PX}px` }));
     col.addEventListener('click', (ev) => {
       if ((ev.target as HTMLElement).closest('.evt') || !S.selected || Date.now() < suppressUntil) return;
-      placeEvent(S.selected, minuteAt(col, (ev as MouseEvent).clientY));
+      placeEvent(S.selected, minuteAt(col, (ev as MouseEvent).clientY), false, viewDay);
     });
     return col;
   });
 
-  const initial = S.phase === 'day' ? Math.max(0, (S.now - CAL_START - 45) * PX) : 0;
+  const initial = S.phase === 'day' && today ? Math.max(0, (S.now - CAL_START - 45) * PX) : 0;
+  const innerCls = `cal-inner ${today ? '' : viewDay < S.dayIndex ? 'other-day past-day' : 'other-day'}`;
   const scroller = h('div', { class: 'cal-scroll', 'data-keep': 'cal', 'data-initial': initial },
-    h('div', { class: 'cal-inner', style: `--n:${execs.length}` },
-      heads,
+    h('div', { class: innerCls, style: `--n:${execs.length}` },
+      phone ? null : heads,
       h('div', { class: 'cal-grid', style: `height:${height}px` }, gutter, ...cols)));
+  // Phone: the whole page scrolls (so iOS can tuck its bars away). The name row sticks, and follows the sideways scroll.
+  let stickyHeads: HTMLElement | null = null;
+  if (phone) {
+    const strip = h('div', { class: `${innerCls} heads-strip`, style: `--n:${execs.length}` }, heads);
+    stickyHeads = h('div', { class: 'cal-heads-wrap' }, strip);
+    const sync = () => { strip.style.transform = `translateX(${-scroller.scrollLeft}px)`; };
+    scroller.addEventListener('scroll', sync, { passive: true });
+    queueMicrotask(sync);
+  }
 
   const busy = S.phase === 'day' ? myMeeting() : undefined;
+  const sticky = (bar: HTMLElement | null) => (phone ? h('div', { class: 'cal-sticky' }, bar, stickyHeads) : bar);
   if (busy) {
     if (S.selected) S.selected = null;
     const lock = h('div', { class: 'lockbar' },
       h('span', {}, '🔒 ', h('b', {}, `You're in "${busy.title}"`), h('small', {}, ` until ${fmt(busy.start! + busy.duration)}. Calendar locked.`)),
       h('button', { class: 'btn', onclick: stepOut }, busy.attendees.length > 1 ? 'Step out' : 'Wrap up'),
     );
-    return h('div', { class: 'app cal locked' }, header, lock, tray, scroller);
+    return h('div', { class: 'app cal locked' }, header, tray, sticky(lock), scroller);
   }
-  return h('div', { class: `app cal ${sel ? 'placing' : ''}` }, header, tray, selBar, scroller, drawer ?? detail);
+  return h('div', { class: `app cal ${sel ? 'placing' : ''}` }, header, tray, sticky(selBar), scroller, drawer ?? detail);
 }
 
 const t9 = () => 9 * 60;
@@ -491,7 +557,10 @@ function renderCard(e: CalEvent) {
       h('span', { class: 'dur' }, `${e.duration}m`),
     ),
     h('div', { class: 'req-who' }, ...e.attendees.map((a) => h('span', { class: 'who', style: `--c:${EXECS[a].color}` }, EXECS[a].short))),
-    h('div', { class: 'req-tags' }, ...issuesFor(e).map((i) => h('span', { class: `tag ${i.bad ? 'bad' : ''}` }, `${i.icon} ${i.text}`))),
+    h('div', { class: 'req-tags' },
+      e.dueDay !== undefined && h('span', { class: `tag due ${e.dueDay === S.dayIndex ? 'bad' : ''}` }, e.dueDay === S.dayIndex ? '⏰ Due today' : `📆 By ${shortDate(e.dueDay)}`),
+      e.rescheduled && h('span', { class: 'tag bad' }, '💥 Rebook'),
+      ...issuesFor(e).map((i) => h('span', { class: `tag ${i.bad ? 'bad' : ''}` }, `${i.icon} ${i.text}`))),
   );
   makeDraggable(card, e.id, false);
   return card;
@@ -543,6 +612,22 @@ function renderBlock(e: CalEvent) {
   );
   if (movable) makeDraggable(el, e.id, true);
   else el.addEventListener('click', () => select(e.id));
+  return el;
+}
+
+/** A block on a day that isn't today: your bookings ahead can be moved; everything else is read-only. */
+function renderOtherBlock(e: CalEvent) {
+  const mine = viewDay > S.dayIndex && !!findFuture(e.id);
+  const small = e.duration * PX < 34;
+  const st = viewDay < S.dayIndex ? e.status : 'scheduled';
+  const el = h('div', {
+    class: ['evt', `st-${st}`, `k-${e.kind ?? 'meeting'}`, mine ? 'movable ahead' : 'readonly', S.selected === e.id ? 'selected' : '', small ? 'small' : '', e.attendees.length > 1 ? 'multi' : ''].join(' '),
+    style: `top:${(e.start! - CAL_START) * PX}px;height:${Math.max(16, e.duration * PX - 2)}px;--c:${EXECS[e.attendees[0]].color}`,
+  },
+    h('div', { class: 'evt-title' }, st === 'missed' ? '💥 ' : st === 'done' ? '✓ ' : mine ? '📆 ' : '', e.title),
+    !small && h('div', { class: 'evt-time' }, `${fmt(e.start!)}–${fmt(e.start! + e.duration)}`),
+  );
+  if (mine) makeDraggable(el, e.id, true);
   return el;
 }
 
@@ -637,7 +722,7 @@ function makeDraggable(el: HTMLElement, id: string, isBlock: boolean) {
     const sy = down.clientY;
     const r = el.getBoundingClientRect();
     const offY = isBlock ? down.clientY - r.top : 0;
-    const ev = findEvent(id)!;
+    const ev = (findEvent(id) ?? findFuture(id)?.e)!;
     let ghost: HTMLElement | null = null;
     // In the drawer the list scrolls vertically, so a drag is a sideways pull towards the calendar.
     const inDrawer = !!el.closest('.drawer');
@@ -667,11 +752,19 @@ function makeDraggable(el: HTMLElement, id: string, isBlock: boolean) {
       const tl = ghost.querySelector('.ghost-time') as HTMLElement;
       if (col) {
         col.classList.add('hover');
-        const s = Math.max(minStart(), Math.round(minuteAt(col, m.clientY - offY) / 15) * 15);
+        const s = Math.max(viewDay === S.dayIndex ? minStart() : DAY_START, Math.round(minuteAt(col, m.clientY - offY) / 15) * 15);
         tl.textContent = `→ ${fmt(s)}`;
       } else tl.textContent = '';
       const sc = document.querySelector('.cal-scroll') as HTMLElement | null;
-      if (sc) {
+      if (sc && !split.matches) {
+        const topEdge = ((document.querySelector('.cal-sticky') as HTMLElement | null)?.getBoundingClientRect().bottom ?? 80) + 30;
+        const botEdge = ((document.querySelector('.dock') as HTMLElement | null)?.getBoundingClientRect().top ?? window.innerHeight) - 40;
+        if (m.clientY < topEdge) window.scrollBy(0, -10);
+        else if (m.clientY > botEdge) window.scrollBy(0, 10);
+        const sr = sc.getBoundingClientRect();
+        if (m.clientX < sr.left + 50) sc.scrollLeft -= 8;
+        else if (m.clientX > sr.right - 30) sc.scrollLeft += 8;
+      } else if (sc) {
         const sr = sc.getBoundingClientRect();
         if (m.clientY < sr.top + 40 && m.clientY > sr.top - 80) sc.scrollTop -= 10;
         else if (m.clientY > sr.bottom - 40) sc.scrollTop += 10;
@@ -688,7 +781,7 @@ function makeDraggable(el: HTMLElement, id: string, isBlock: boolean) {
         ghost?.remove();
         suppressUntil = Date.now() + 250;
         const col = colAt(u.clientX, u.clientY);
-        if (col && u.type === 'pointerup') placeEvent(id, minuteAt(col, u.clientY - offY));
+        if (col && u.type === 'pointerup') placeEvent(id, minuteAt(col, u.clientY - offY), false, viewDay);
       }
     };
     window.addEventListener('pointermove', move, { passive: false });

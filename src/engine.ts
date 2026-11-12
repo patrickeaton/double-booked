@@ -98,6 +98,8 @@ export function newGame() {
   S.ledger = [];
   S.incoming = [];
   S.carry = [];
+  S.future = {};
+  S.past = {};
   S.messages = [];
   S.kendall = { helped: 0, sabotaged: 0 };
   S.shortcuts = [];
@@ -122,6 +124,8 @@ export function continueGame() {
   S.savedDrinks = save.savedDrinks ?? [];
   S.messages = save.messages ?? [];
   S.kendall = save.kendall ?? { helped: 0, sabotaged: 0 };
+  S.future = save.future ?? {};
+  S.past = save.past ?? {};
   S.carry = [];
   setupDay(save.dayIndex);
 }
@@ -154,6 +158,8 @@ export function setupDay(i: number) {
     return { ...e, start, baseDuration: e.duration, status: start === null ? 'pending' : 'scheduled' };
   });
   S.events.push(...S.incoming.map((e) => ({ ...e })));
+  S.events.push(...(S.future[i] ?? []).map((e) => ({ ...e, status: 'scheduled' as const, fresh: false })));
+  delete S.future[i];
   S.carry = [];
   S.tasks = [];
   S.orders = [];
@@ -335,6 +341,7 @@ function fire(s: Script) {
       break;
     case 'request': {
       S.events.push({ ...s.event, baseDuration: s.event.duration, status: 'pending', fresh: true });
+      if (s.event.dueDay !== undefined && !S.endless && S.dayIndex < DAYS.length) S.events[S.events.length - 1].dueDay = Math.min(s.event.dueDay, DAYS.length - 1);
       if (s.msg) addMessage(s.msg);
       banner('calendar', '📥 New request', s.event.title);
       if (s.event.travel) offerShortcut({ kind: 'ride' });
@@ -603,8 +610,89 @@ function missEvent(e: CalEvent, text: string) {
   e.status = 'missed';
   if (S.selected === e.id) S.selected = null;
   applyEffects({ ...(lifeOnly(e, e.missPenalty ?? { standing: -5 })), stress: ((e.missPenalty?.stress ?? 0) + 3) }, text);
-  banner('calendar', '💥 Missed meeting', text);
   if (e.strikeOnMiss) addStrike(`You missed ${e.title}.`);
+  if (canReschedule(e)) {
+    const due = nextWorkday(S.dayIndex + 1);
+    S.events.push({
+      ...e,
+      id: `${e.id}~`,
+      start: null, proposed: undefined, deadline: undefined, window: undefined,
+      duration: e.baseDuration ?? e.duration, overranBy: undefined, planned: undefined,
+      status: 'pending', fresh: true, departed: false, withRide: false, rideTo: undefined, editedBy: undefined,
+      strikeOnMiss: false, rescheduled: true, dueDay: due,
+      reward: halveFx(e.reward ?? {}),
+      note: `Missed on ${dayDate(S.dayIndex)}. Needs a new time by ${dayDate(due)}.`,
+    });
+    banner('calendar', '💥 Missed: back in requests', `${e.title} needs rebooking by ${dayDate(due)}.`);
+  } else banner('calendar', '💥 Missed meeting', text);
+}
+
+/** Real meetings with other people get rebooked once. Lunches, focus time, personal stuff and solo blocks just vanish. */
+function canReschedule(e: CalEvent) {
+  if (e.rescheduled || e.fixed || e.force || e.kind === 'focus' || e.kind === 'personal') return false;
+  if (e.attendees.length === 1 && e.attendees[0] === 'me') return false;
+  if (e.attendees.includes('team')) return false;
+  return !/lunch|focus|gym|haircut|break|standup|dentist/i.test(e.title);
+}
+
+// ───────────────────────────── other days ─────────────────────────────
+
+/** Day 0 is Wednesday 4 March 2026. 0 = Sunday … 6 = Saturday. */
+export const dowOf = (i: number) => (3 + i) % 7;
+export const isWeekendDay = (i: number) => dowOf(i) === 0 || dowOf(i) === 6;
+export const dayDate = (i: number) => new Date(2026, 2, 4 + i).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+export function nextWorkday(i: number) {
+  while (isWeekendDay(i)) i++;
+  return i;
+}
+/** Furthest day you can see/book ahead. */
+export const lastViewDay = () => (S.endless || S.dayIndex >= DAYS.length ? S.dayIndex + 7 : Math.min(S.dayIndex + 7, DAYS.length - 1));
+
+export function findFuture(id: string | null): { e: CalEvent; day: number } | null {
+  if (!id) return null;
+  for (const [k, list] of Object.entries(S.future)) {
+    const e = list.find((x) => x.id === id);
+    if (e) return { e, day: +k };
+  }
+  return null;
+}
+
+/** Take a booked-ahead meeting off its day and put it back in today's requests. */
+export function unbookFuture(id: string) {
+  const f = findFuture(id);
+  if (!f) return;
+  S.future[f.day] = S.future[f.day].filter((x) => x !== f.e);
+  S.events.push({ ...f.e, start: null, status: 'pending', fresh: false });
+  S.selected = null;
+  dirty();
+}
+
+/** Book (or move) a meeting onto a later day. Returns false if it can't go there. */
+function placeAhead(id: string, start: number, onDay: number, keepSelected: boolean) {
+  const today = findEvent(id);
+  const ahead = today ? null : findFuture(id);
+  const e = today ?? ahead?.e;
+  if (!e || e.fixed || e.departed || (e.status !== 'pending' && e.status !== 'scheduled')) return;
+  if (e.dueDay === undefined) {
+    banner('calendar', '📅 Needs to be today', `${e.title} can't wait. Book it today, or 📆 push it.`);
+    return;
+  }
+  if (onDay > e.dueDay) {
+    banner('calendar', '⏰ Too late', `${e.title} is due by ${dayDate(e.dueDay)}.`);
+    return;
+  }
+  if (isWeekendDay(onDay) && e.kind !== 'personal') {
+    banner('calendar', '🌴 That\'s the weekend', 'Bev has a policy. Pick a weekday.');
+    return;
+  }
+  let s = Math.round(start / 15) * 15;
+  s = Math.max(DAY_START, Math.min(DAY_END - e.duration, s));
+  if (today) S.events = S.events.filter((x) => x !== e);
+  else if (ahead) S.future[ahead.day] = S.future[ahead.day].filter((x) => x !== e);
+  (S.future[onDay] ??= []).push({ ...e, start: s, status: 'scheduled', fresh: false, deadline: undefined, window: undefined });
+  if (!keepSelected) S.selected = null;
+  banner('calendar', '📆 Booked ahead', `${e.title}: ${dayDate(onDay)}, ${fmt(s)}.`);
+  dirty();
 }
 
 export function minStart(): number {
@@ -612,7 +700,15 @@ export function minStart(): number {
   return DAY_START;
 }
 
-export function placeEvent(id: string, start: number, keepSelected = false) {
+export function placeEvent(id: string, start: number, keepSelected = false, onDay = S.dayIndex) {
+  if (onDay > S.dayIndex) return placeAhead(id, start, onDay, keepSelected);
+  if (onDay < S.dayIndex) return;
+  const back = findFuture(id);
+  if (back) {
+    // Pulled back from a later day onto today.
+    S.future[back.day] = S.future[back.day].filter((x) => x !== back.e);
+    S.events.push(back.e);
+  }
   const e = findEvent(id);
   if (!e || e.fixed || e.departed) return;
   if (e.status !== 'pending' && e.status !== 'scheduled') return;
@@ -795,6 +891,29 @@ export function choose(msgId: string, idx: number) {
 const KENDALL = 'Kendall (backup EA)';
 const rand = <T,>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)];
 
+/** The automatic email you get when someone else edits a calendar you manage. */
+function calNotice(e: CalEvent, change: string, was?: string) {
+  if (!hasApp('mail')) return;
+  addMessage({
+    app: 'mail', from: 'Sproutly Calendar', subject: `Updated: ${e.title}`,
+    body: `${KENDALL} made a change to ${execNames(e.attendees)}'s calendar.\n\n${change}${was ? `\nWas: ${was}` : ''}\n\nYou're receiving this because you manage this calendar.`,
+  });
+}
+const span = (e: CalEvent) => (e.start === null ? 'unbooked' : `${fmt(e.start)}–${fmt(e.start + e.duration)}`);
+
+const SNIPES = [
+  (w: string, t: string) => `fixed a little something on ${w}'s calendar ("${t}") 🙂 happens to the best of us!`,
+  (w: string, t: string) => `per my last calendar edit… ${w}'s "${t}" is sorted. no need to check it 😊`,
+  (w: string, t: string) => `just tidied ${w}'s afternoon ✨ "${t}" was bothering me. not judging!!`,
+  (w: string, t: string) => `don't worry about "${t}", I handled it. like last time 🙃`,
+  (w: string, t: string) => `quick heads up: I made a small change to "${t}" for ${w}. you looked swamped (again) 💕`,
+];
+const HELP_SNIPES = [
+  (t: string) => `booked "${t}" for you! it was just sitting there 😊`,
+  (t: string) => `took care of "${t}" 🙂 no need to thank me (but you can)`,
+  (t: string) => `"${t}" was unbooked so I just… did it. hope that's ok!! 🌸`,
+];
+
 function kendallAct(mode: 'help' | 'sabotage') {
   const now = S.now;
   const touchable = (e: CalEvent) => e.status === 'scheduled' && e.start !== null && e.start > now + 30 && !e.fixed && !e.departed && e.kind !== 'focus' && !e.attendees.includes('me');
@@ -810,7 +929,8 @@ function kendallAct(mode: 'help' | 'sabotage') {
         S.selected = wasSel === pend.id ? null : wasSel;
         pend.editedBy = 'Kendall';
         S.kendall.helped++;
-        return say(`booked "${pend.title}" at ${fmt(t)} for you! 😊 no need to thank me`);
+        calNotice(pend, `Booked: ${pend.title}, ${fmt(t)}–${fmt(t + pend.duration)}`);
+        return say(`${rand(HELP_SNIPES)(pend.title)} (${fmt(t)})`);
       }
     }
     if (hasApp('ryde')) {
@@ -819,6 +939,7 @@ function kendallAct(mode: 'help' | 'sabotage') {
         toggleAddon(r.id, 'ride');
         r.editedBy = 'Kendall';
         S.kendall.helped++;
+        calNotice(r, `Ride added for ${r.title} (to ${r.place}).`);
         return say(`saw ${execNames(r.attendees)} had no car for "${r.title}" so I booked a Ryde 🚕`);
       }
     }
@@ -835,24 +956,28 @@ function kendallAct(mode: 'help' | 'sabotage') {
   const pool = S.events.filter(touchable);
   if (!pool.length) return;
   const e = rand(pool);
+  const was = span(e);
   const others = S.events.filter((o) => o !== e && o.status === 'scheduled' && o.start !== null && o.start > now + 15 && o.attendees.some((a) => e.attendees.includes(a)));
   const options: (() => string | null)[] = [
     () => {
       const o = others.length ? rand(others) : null;
       if (!o) return null;
       e.start = o.start;
+      calNotice(e, `Moved: ${e.title}, now ${span(e)}`, was);
       return `moved "${e.title}"`;
     },
     () => {
       if (!e.withRide) return null;
       e.withRide = false;
       e.rideTo = undefined;
+      calNotice(e, `Ride removed for ${e.title}.`);
       return `cancelled the ride for "${e.title}"`;
     },
     () => {
       const min = e.minOk ?? e.duration;
       if (e.duration <= 15) return null;
       e.duration = Math.max(15, min - 15);
+      calNotice(e, `Shortened: ${e.title}, now ${span(e)}`, was);
       return `trimmed "${e.title}"`;
     },
   ];
@@ -863,7 +988,7 @@ function kendallAct(mode: 'help' | 'sabotage') {
     e.fresh = true;
     S.kendall.sabotaged++;
     if (!S.flags.includes('kendall-sabotaged')) S.flags.push('kendall-sabotaged');
-    if (Math.random() < 0.5) say(`tidied up ${execNames(e.attendees)}'s calendar a little ✨ you're welcome!`);
+    if (Math.random() < 0.6) say(rand(SNIPES)(execNames(e.attendees), e.title));
     if (Math.random() < 0.5) {
       S.queue.push({
         at: now + 12, type: 'msg',
@@ -1105,11 +1230,19 @@ function checkGameOver(): boolean {
 export function endDay() {
   S.call = null;
   for (const e of S.events) {
-    if (e.status === 'pending') {
-      e.status = 'missed';
-      applyEffects(lifeOnly(e, e.missPenalty ?? { standing: -5 }), `Never booked: ${e.title}`, true);
+    if (e.status !== 'pending') continue;
+    if (e.dueDay !== undefined && e.dueDay > S.dayIndex) {
+      // Not due yet: it waits in tomorrow's tray.
+      S.carry.push({ ...e, fresh: false });
+      e.status = 'bumped';
+      continue;
     }
+    e.status = 'missed';
+    applyEffects(lifeOnly(e, e.missPenalty ?? { standing: -5 }), e.dueDay !== undefined ? `Missed the deadline: ${e.title}` : `Never booked: ${e.title}`, true);
   }
+  // Keep a read-only copy of today's calendar (the last week of them).
+  S.past[S.dayIndex] = S.events.filter((e) => e.start !== null && e.status !== 'declined' && e.status !== 'bumped' && e.status !== 'pending').map((e) => ({ ...e, fresh: false }));
+  for (const k of Object.keys(S.past)) if (+k < S.dayIndex - 7) delete S.past[+k];
   for (const task of S.tasks) if (task.status === 'open') {
     task.status = 'failed';
     applyEffects(task.fail, `Failed: ${task.text}`, true);
