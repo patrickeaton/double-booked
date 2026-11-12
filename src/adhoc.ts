@@ -246,6 +246,24 @@ const WEEKEND: { from: string; app: InboxApp; body: string; choices: Choice[]; t
   },
 ];
 
+/** Weekend work: it needs YOU, so it fights your plans for the same calendar. */
+const WEEKEND_WORK: { who: ExecId; app: InboxApp; title: string; duration: number; body: string; stakes: 1 | 2; book?: boolean }[] = [
+  { who: 'margo', app: 'huddle', title: 'Investor update draft (Zoom)', duration: 45, body: 'can we jam on the investor update?? 45 mins. today ideally. it\'s fine. it\'s urgent. it\'s fine 🙃', stakes: 2 },
+  { who: 'margo', app: 'messages', title: '"Quick" call · Margo', duration: 30, body: 'are you around for a quick call? like 30 mins. like actually 30 this time', stakes: 1 },
+  { who: 'margo', app: 'huddle', title: 'Podcast prep (Zoom)', duration: 60, body: 'I said yes to a podcast. it records monday. I need talking points. and a vibe. today?', stakes: 2 },
+  { who: 'margo', app: 'huddle', title: 'Rewrite the all-hands deck', duration: 60, body: 'woke up with a new vision for monday\'s all-hands. the deck is wrong. all of it. help', stakes: 2 },
+  { who: 'theo', app: 'huddle', title: 'On-call handover (Zoom)', duration: 30, body: 'need someone to sit on the on-call handover. it\'s mostly listening. and taking notes. sorry', stakes: 1 },
+  { who: 'theo', app: 'huddle', title: 'Vendor contract review', duration: 45, body: 'the hosting contract renews monday. can you read it with me? I don\'t speak lawyer', stakes: 2 },
+  { who: 'theo', app: 'messages', title: 'Server room key run 🔑', duration: 45, body: 'locked out of the server cupboard. you have the spare key. I know it\'s saturday. I KNOW', stakes: 1 },
+  { who: 'dana', app: 'mail', title: 'Board pack proofread', duration: 60, body: 'The board pack needs a proofread before Monday. One hour. I\'d appreciate it.', stakes: 2 },
+  { who: 'dana', app: 'mail', title: 'Expense audit (Zoom)', duration: 30, body: 'Thirty minutes on last month\'s expenses. Several receipts are "vibes". Please advise.', stakes: 1 },
+];
+const WEEKEND_BOOKED: { who: ExecId; title: string; duration: number; body: string }[] = [
+  { who: 'margo', title: 'Sync w/ you (Margo booked this)', duration: 30, body: 'I put 30 mins in your cal at {at}. hope that\'s ok!! (it\'s ok right)' },
+  { who: 'theo', title: 'Incident review (Theo booked)', duration: 45, body: 'Booked us an incident review at {at}. Sorry. Things caught fire. Smallish fire.' },
+  { who: 'dana', title: 'Budget call (Dana booked)', duration: 30, body: 'I have scheduled a budget call for {at}. Your attendance is assumed.' },
+];
+
 export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a: AppId) => boolean, morale = 60): Script[] {
   const r = mulberry32(seed);
   const out: Script[] = [];
@@ -258,7 +276,40 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
       const w = pool.splice(Math.floor(r() * pool.length), 1)[0];
       out.push({ at: q15(t('9:30') + r() * 7 * 60) + Math.floor(r() * 10), type: 'msg', msg: { app: w.app, from: w.from, body: w.body, choices: w.choices, expiresIn: 60, timeoutEffects: w.timeout, timeoutLog: w.timeoutLog } });
     }
-    return out;
+    // The bosses don't really believe in weekends either.
+    const who = d.execs.filter(isBoss);
+    const nm = (x: ExecId) => ({ margo: 'Margo', theo: 'Theo', dana: 'Dana' } as Record<string, string>)[x] ?? x;
+    const asks = WEEKEND_WORK.filter((w) => who.includes(w.who));
+    const nAsks = 2 + (chance(r, 0.5) ? 1 : 0);
+    for (let k = 0; k < nAsks && asks.length; k++) {
+      const w = asks.splice(Math.floor(r() * asks.length), 1)[0];
+      const at = q15(t('9:15') + r() * 6 * 60);
+      out.push({
+        at, type: 'request',
+        event: {
+          id: id(), title: w.title, attendees: [w.who, 'me'], start: null, duration: w.duration, remote: true, from: w.who, deadline: Math.min(at + 4 * 60, t('17:00')),
+          reward: w.stakes === 2 ? { standing: 5, stress: 7 } : { standing: 3, stress: 5 },
+          missPenalty: w.stakes === 2 ? { standing: -6 } : { standing: -4 }, declinePenalty: w.stakes === 2 ? { standing: -4 } : { standing: -2 },
+          note: 'On a weekend. Saying no is allowed. It is noticed.',
+        },
+        msg: { app: w.app, from: nm(w.who), subject: w.app === 'mail' ? w.title : undefined, body: w.body },
+      });
+    }
+    // Sometimes they just book you.
+    const books = WEEKEND_BOOKED.filter((b) => who.includes(b.who));
+    if (books.length && chance(r, 0.6)) {
+      const b = pick(r, books);
+      const at = q15(t('9:30') + r() * 4 * 60);
+      const start = q15(at + 60 + r() * 120);
+      out.push({
+        at, type: 'insert',
+        event: { id: id(), title: b.title, attendees: [b.who, 'me'], start, duration: b.duration, remote: true, from: b.who, reward: { standing: 2, stress: 5 }, missPenalty: { standing: -5 }, declinePenalty: { standing: -3 }, bumpPenalty: { standing: -2 }, note: 'Booked straight into your weekend.' },
+        msg: { app: 'huddle', from: nm(b.who), body: b.body.replace('{at}', fmt(start)) },
+      });
+    }
+    // And the phone rings.
+    if (chance(r, 0.5)) out.push({ at: q15(t('10:00') + r() * 6 * 60), type: 'call', call: { ...pick(r, CALLS) } });
+    return out.sort((a, b) => a.at - b.at);
   }
 
   // Spread the drops across the day.
