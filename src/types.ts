@@ -74,6 +74,8 @@ export interface CalEvent {
   note?: string;
   status: EventStatus;
   fresh?: boolean;
+  /** Flag set when this meeting happens. */
+  flagOnDone?: string;
 }
 
 export type EventDef = Omit<CalEvent, 'status'>;
@@ -149,7 +151,14 @@ export interface Task extends TaskDef {
 }
 
 /** `at` is an absolute time; scripts inside a Choice's `then` use `after` (minutes from the choice). */
-export type Script = { at: number; after?: number } & (
+/** Only fire if all `if` flags are set, no `unless` flags are set, and the meter is in range. */
+export interface ScriptCond {
+  if?: string[];
+  unless?: string[];
+  meter?: { m: Meter; min?: number; max?: number };
+}
+
+export type Script = { at: number; after?: number; when?: ScriptCond } & (
   | { type: 'msg'; msg: MsgDef }
   | { type: 'request'; event: EventDef; msg?: MsgDef }
   | { type: 'insert'; event: EventDef; msg?: MsgDef }
@@ -157,6 +166,8 @@ export type Script = { at: number; after?: number } & (
   /** Someone changes the venue, or flips a meeting between remote and in person. */
   | { type: 'change'; id: string; place?: string; travel?: number; remote?: boolean; mustBeInPerson?: boolean; msg?: MsgDef }
   | { type: 'task'; task: TaskDef; msg?: MsgDef }
+  /** Push a scheduled meeting later (or earlier) by `by` minutes. */
+  | { type: 'nudge'; id: string; by: number; msg?: MsgDef }
   | { type: 'call'; call: CallDef }
   | { type: 'reveal'; flag: string }
   | { type: 'effects'; effects: Effects; log: string; msg?: MsgDef }
@@ -164,6 +175,11 @@ export type Script = { at: number; after?: number } & (
 
 export interface DayDef {
   title: string;
+  weekday: string;
+  /** No prep, no payroll, faster clock, and resting lowers stress. */
+  weekend?: boolean;
+  /** How many ad-hoc things get drawn from the pool today. */
+  adhoc: number;
   /** Apps that unlock on this day (they stay unlocked afterwards). */
   apps: AppId[];
   subtitle: string;

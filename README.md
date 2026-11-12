@@ -1,6 +1,6 @@
 # Double Booked
 
-A comedy management game: you're the new executive assistant at a startup that might not survive the month, and you're on 30-day probation. Everything happens on your work phone.
+A comedy management game: you're the new executive assistant at a startup that might not survive the month, and you're on a 14-day probation (weekends included). Everything happens on your work phone. See [STORY.md](STORY.md) for the arc; after Day 14 there's an endless mode.
 
 - **Morning prep**: calm puzzle. Drag (or tap, then tap) overnight requests onto the execs' calendars.
 - **Workday**: real-time chaos. Meetings overrun, the CEO goes to the dentist, investors call.

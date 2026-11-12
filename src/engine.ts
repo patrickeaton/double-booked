@@ -1,11 +1,13 @@
-import { CAL_START, DAYS, DAY_END, DAY_START, DRINKS, EXECS, PAYROLL, PREP_TIME, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, fmt } from './data';
+import { DAYS, dayAt } from './days';
+import { CAL_START, DAY_END, DAY_START, DRINKS, EXECS, PAYROLL, PREP_TIME, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, fmt } from './data';
 import {
   S, START_METERS, addStrike, applyEffects, banner, dirty, fmtMoney, readSave, uid, writeSave, clearSave,
 } from './state';
 import { offerShortcut } from './shortcuts';
+import { generateAdhoc } from './adhoc';
 import type { AppId, CalEvent, Effects, ExecId, Message, MsgDef, Script } from './types';
 
-export const day = () => DAYS[S.dayIndex];
+export const day = () => dayAt(S.dayIndex);
 export const unlockedApps = (): AppId[] => DAYS.slice(0, S.dayIndex + 1).flatMap((d) => d.apps);
 export const hasApp = (a: AppId) => unlockedApps().includes(a);
 export const isNewApp = (a: AppId) => S.dayIndex > 0 && day().apps.includes(a);
@@ -42,6 +44,8 @@ export function newGame() {
   S.incoming = [];
   S.carry = [];
   S.shortcuts = [];
+  S.seed = Math.floor(Math.random() * 1e9);
+  S.endless = false;
   setupDay(0);
 }
 
@@ -55,6 +59,8 @@ export function continueGame() {
   S.ledger = [];
   S.incoming = save.incoming ?? [];
   S.shortcuts = save.shortcuts ?? [];
+  S.seed = save.seed ?? 1;
+  S.endless = save.endless ?? false;
   S.carry = [];
   setupDay(save.dayIndex);
 }
@@ -77,7 +83,7 @@ export function setupDay(i: number) {
   S.orders = [];
   S.log = [];
   S.call = null;
-  S.queue = d.script.map((s) => ({ ...s })).sort((a, b) => a.at - b.at);
+  S.queue = [...d.script, ...generateAdhoc(i, d, S.seed + i * 7919, hasApp)].map((s) => ({ ...s })).sort((a, b) => a.at - b.at);
   bookings.length = 0;
   S.selected = null;
   S.openMail = null;
@@ -93,6 +99,7 @@ export function setupDay(i: number) {
 }
 
 export function startPrep() {
+  if (day().weekend) return startDay();
   S.phase = 'prep';
   dirty();
 }
@@ -108,7 +115,7 @@ export function startDay() {
 
 // ───────────────────────────── clock ─────────────────────────────
 
-const MS_PER_MIN = 333; // 9am–6pm in ~3 real minutes
+const MS_PER_MIN = 333; // 9am–6pm in ~3 real minutes (weekends run twice as fast)
 let acc = 0;
 let last = 0;
 let running = false;
@@ -132,8 +139,9 @@ function loop(ts: number): boolean {
   last = ts;
   if (!S.paused) {
     acc += dt * S.speed;
-    while (acc >= MS_PER_MIN && S.phase === 'day') {
-      acc -= MS_PER_MIN;
+    const perMin = day().weekend ? MS_PER_MIN / 2 : MS_PER_MIN;
+    while (acc >= perMin && S.phase === 'day') {
+      acc -= perMin;
       advance();
     }
   }
@@ -225,13 +233,27 @@ function advance() {
   // stress from the unread pile
   const unread = S.messages.filter((m) => !m.read).length + S.messages.filter((m) => m.choices && m.chosen === undefined).length;
   if (unread) S.meters.stress = Math.min(100, S.meters.stress + unread * 0.008);
+  if (day().weekend) S.meters.stress = Math.max(0, S.meters.stress - 0.03);
 
   if (checkGameOver()) return;
   if (now >= DAY_END) endDay();
   dirty();
 }
 
+function condOk(c?: Script['when']) {
+  if (!c) return true;
+  if (c.if && !c.if.every((f) => S.flags.includes(f))) return false;
+  if (c.unless && c.unless.some((f) => S.flags.includes(f))) return false;
+  if (c.meter) {
+    const v = S.meters[c.meter.m];
+    if (c.meter.min !== undefined && v < c.meter.min) return false;
+    if (c.meter.max !== undefined && v > c.meter.max) return false;
+  }
+  return true;
+}
+
 function fire(s: Script) {
+  if (!condOk(s.when)) return;
   switch (s.type) {
     case 'msg':
       addMessage(s.msg);
@@ -258,6 +280,16 @@ function fire(s: Script) {
         if (s.duration) ev.duration = s.duration;
       }
       if (s.msg) addMessage(s.msg);
+      break;
+    }
+    case 'nudge': {
+      const ev = findEvent(s.id);
+      if (ev && ev.status === 'scheduled' && ev.start !== null && !ev.departed) {
+        ev.start = Math.max(DAY_START, Math.min(DAY_END - ev.duration, ev.start + s.by));
+        ev.fresh = true;
+        banner('calendar', '📅 Meeting moved', `${ev.title} → ${fmt(ev.start)}`);
+        if (s.msg) addMessage(s.msg);
+      }
       break;
     }
     case 'change': {
@@ -293,7 +325,7 @@ function fire(s: Script) {
         S.queue.push({ ...s, at: S.now + 5 });
         S.queue.sort((a, b) => a.at - b.at);
       } else {
-        S.call = { ...s.call, status: 'ringing', ringUntil: S.now + 10 };
+        S.call = { ...s.call, status: 'ringing', ringUntil: S.now + (day().weekend ? 20 : 10) };
       }
       break;
     case 'reveal':
@@ -378,6 +410,7 @@ function finishEvent(e: CalEvent) {
       const half: Effects = Object.fromEntries(Object.entries(e.reward).map(([k, v]) => [k, (v as number) > 0 ? Math.round((v as number) / 2) : v]));
       applyEffects(half, `${e.title} went OK over video. Would've landed better in person.`);
     } else applyEffects(e.reward, `${e.title} went well${e.remote ? ' (remote)' : ''}.`);
+    if (e.flagOnDone && !S.flags.includes(e.flagOnDone)) S.flags.push(e.flagOnDone);
     return;
   }
   // Cut short: some of the upside, a slice of the downside. Always better than missing it.
@@ -395,7 +428,7 @@ function finishEvent(e: CalEvent) {
 export const canResize = (e: CalEvent) => !e.departed && !e.fixed && e.kind !== 'focus' && (e.status === 'pending' || e.status === 'scheduled');
 export const canWrap = (e: CalEvent) => !e.fixed && e.kind !== 'focus' && e.status === 'running';
 export const canBump = (e: CalEvent) =>
-  !e.departed && !e.fixed && !e.noBump && e.kind !== 'personal' && (e.status === 'pending' || e.status === 'scheduled') && S.dayIndex + 1 < DAYS.length;
+  !e.departed && !e.fixed && !e.noBump && e.kind !== 'personal' && (e.status === 'pending' || e.status === 'scheduled') && (S.endless || S.dayIndex + 1 < DAYS.length);
 
 export function resizeEvent(id: string, delta: number) {
   const e = findEvent(id);
@@ -867,9 +900,11 @@ export function endDay() {
   }
 
   if (S.carry.length) notes.push(`Pushed to tomorrow: ${S.carry.map((e) => e.title).join(', ')}.`);
-  S.meters.runway -= PAYROLL;
-  S.ledger.unshift({ at: DAY_END, label: 'Payroll', amount: -PAYROLL });
-  notes.push(`Payroll went out: ${fmtMoney(PAYROLL)}.`);
+  if (!day().weekend) {
+    S.meters.runway -= PAYROLL;
+    S.ledger.unshift({ at: DAY_END, label: 'Payroll', amount: -PAYROLL });
+    notes.push(`Payroll went out: ${fmtMoney(PAYROLL)}.`);
+  }
 
   const highlights = [...S.log]
     .sort((a, b) => weight(b.effects) - weight(a.effects))
@@ -894,15 +929,28 @@ const weight = (e: Effects) =>
   Math.abs(e.standing ?? 0) + Math.abs(e.morale ?? 0) + Math.abs(e.stress ?? 0) + Math.abs(e.runway ?? 0) / 1000;
 
 export function nextDay() {
-  S.meters.stress = Math.max(0, S.meters.stress - 25);
+  S.meters.stress = Math.max(0, S.meters.stress - 20);
   S.incoming = S.carry;
   S.carry = [];
-  if (S.dayIndex + 1 >= DAYS.length) {
+  if (S.dayIndex + 1 >= DAYS.length && !S.endless) {
     S.phase = 'end';
     writeSave();
     dirty();
     return;
   }
+  setupDay(S.dayIndex + 1);
+}
+
+/** Straight into endless mode from the title screen: every app, no story. */
+export function newEndless() {
+  newGame();
+  S.endless = true;
+  setupDay(DAYS.length);
+}
+
+/** After the final review: keep going. */
+export function continueEndless() {
+  S.endless = true;
   setupDay(S.dayIndex + 1);
 }
 

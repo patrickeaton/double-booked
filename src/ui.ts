@@ -1,7 +1,8 @@
-import { CAL_END, CAL_START, DAYS, DAY_END, DRINKS, EXECS, PAYROLL, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, TABLE_TIMES, fmt } from './data';
+import { DAYS, dayAt } from './days';
+import { CAL_END, CAL_START, DAY_END, DRINKS, EXECS, PAYROLL, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, TABLE_TIMES, fmt } from './data';
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
-  minStart, newGame, nextDay, hasApp, isNewApp, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
+  minStart, newGame, nextDay, hasApp, isNewApp, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
   toggleSpeed, unschedule,
 } from './engine';
 import { MAX_SHORTCUTS, addShortcut, removeShortcut, runShortcut, shortcutLabel } from './shortcuts';
@@ -155,12 +156,24 @@ let overlayKey = '';
 let overlayBorn = 0;
 
 // ───────────────────────────── status + meters ─────────────────────────────
+function dayAtLabel(i: number) {
+  const d = dayAt(i);
+  return `${d.weekday}${d.weekend ? ' 🌴' : ''}`;
+}
+
+function dayLabel(short = false) {
+  const d = day();
+  const n = S.dayIndex + 1;
+  if (S.dayIndex >= DAYS.length) return short ? `${d.weekday} · Day ${n}` : `${d.weekday} · Endless · Day ${n}`;
+  return short ? `${d.weekday} · ${n}/${DAYS.length}` : `${d.weekday} · Day ${n} of ${DAYS.length}`;
+}
+
 function renderStatus() {
   const time = S.phase === 'prep' || S.phase === 'memo' ? fmt(S.now) : S.phase === 'day' ? fmt(S.now) : '—';
-  const label = S.phase === 'prep' ? 'Morning prep' : S.phase === 'day' ? (S.paused ? 'Paused' : 'Workday') : '';
+  const label = S.phase === 'prep' ? 'Morning prep' : S.phase === 'day' ? (S.paused ? 'Paused' : day().weekend ? 'Weekend 🌴' : 'Workday') : '';
   return h('div', { class: 'status-inner' },
     h('span', { class: 'clock' }, time, label && h('small', {}, label)),
-    h('span', { class: 'day-pill' }, `Day ${S.dayIndex + 1}/30`),
+    h('span', { class: 'day-pill' }, dayLabel(true)),
     h('span', { class: 'status-right' },
       S.phase === 'day' && h('button', { class: 'chip-btn', onclick: toggleSpeed, title: 'Speed' }, `${S.speed}×`),
       S.phase === 'day' && h('button', { class: 'chip-btn', onclick: togglePause, title: 'Pause' }, S.paused ? '▶' : '⏸'),
@@ -219,7 +232,7 @@ function renderCalendar() {
     h('h2', {}, 'Calendar'),
     S.phase === 'prep'
       ? h('button', { class: 'btn primary', onclick: startDay }, pending.length ? `Start day (${pending.length} unbooked) →` : 'Start day →')
-      : h('span', { class: 'muted' }, S.phase === 'day' ? `${fmt(S.now)} · ends ${fmt(DAY_END)}` : ''),
+      : h('span', { class: 'muted' }, S.phase === 'day' ? (d.weekend ? '🌴 Weekend. Technically.' : `${fmt(S.now)} · ends ${fmt(DAY_END)}`) : ''),
   );
 
   const tray = h('div', { class: 'tray' },
@@ -741,7 +754,7 @@ function renderPresto() {
       h('h4', {}, 'New shortcut'),
       h('div', { class: 'seg' }, ...kinds.map((k) => h('button', { class: `seg-btn ${pfKind === k ? 'on' : ''}`, onclick: () => { pfKind = k; dirty(); } }, k === 'coffee' ? '☕ Coffee' : k === 'gift' ? '📦 Gift' : '🚕 Rides'))),
       pfKind === 'coffee' && h('div', { class: 'sc-build' },
-        h('div', { class: 'seg' }, ...(Object.keys(EXECS) as ExecId[]).filter((x) => DAYS.slice(0, S.dayIndex + 1).some((d) => d.execs.includes(x))).map((x) =>
+        h('div', { class: 'seg' }, ...(Object.keys(EXECS) as ExecId[]).filter((x) => DAYS.slice(0, S.dayIndex + 1).some((d) => d.execs.includes(x)) || S.endless).map((x) =>
           h('button', { class: `seg-btn ${pfTo === x ? 'on' : ''}`, onclick: () => { pfTo = x; dirty(); } }, `${EXECS[x].emoji} ${EXECS[x].short}`))),
         h('div', { class: 'slots' }, ...DRINKS.map((d) => h('button', { class: `slot ${pfDrink === d.id ? 'mine' : ''}`, onclick: () => { pfDrink = d.id; dirty(); } }, `${d.emoji} ${d.name}`))),
         h('p', { class: 'muted small' }, S.flags.includes(`drink-${pfTo}`) ? `📝 Notes say ${EXECS[pfTo].short} drinks: ${DRINKS.find((d) => d.id === EXECS[pfTo].drink)!.name}` : `📝 You don't know ${EXECS[pfTo].short}'s order yet.`),
@@ -774,32 +787,39 @@ function renderTitle() {
   return h('div', { class: 'card-screen title-screen' },
     h('div', { class: 'logo' }, '📅'),
     h('h1', {}, 'Double Booked'),
-    h('p', { class: 'tagline' }, '30 days of probation. One phone. Zero right answers.'),
+    h('p', { class: 'tagline' }, `${DAYS.length} days of probation. Weekends included. Zero right answers.`),
     h('div', { class: 'stack' },
-      save && save.dayIndex > 0 && h('button', { class: 'btn primary big', onclick: continueGame }, `Continue · Day ${save.dayIndex + 1}`),
+      save && save.dayIndex > 0 && h('button', { class: 'btn primary big', onclick: continueGame }, `Continue · ${save.endless ? 'Endless ' : ''}Day ${save.dayIndex + 1}`),
       h('button', { class: `btn ${save && save.dayIndex > 0 ? '' : 'primary'} big`, onclick: newGame }, 'New game'),
+      h('button', { class: 'btn big', onclick: newEndless }, '♾️ Endless mode'),
     ),
-    h('p', { class: 'muted small' }, 'Prototype · Days 1–3'),
+    h('p', { class: 'muted small' }, 'Endless: every app, no story, a new random day forever.'),
   );
 }
 
 function renderMemo() {
   const d = day();
-  return h('div', { class: 'card-screen memo', 'data-keep': 'memo' },
-    h('div', { class: 'eyebrow' }, `Day ${S.dayIndex + 1} of 30`),
-    h('h1', {}, d.title),
-    h('p', { class: 'tagline' }, d.subtitle),
+  return h('div', { class: 'card-screen memo framed' },
+    h('div', { class: 'cs-head' },
+      h('div', { class: 'eyebrow' }, dayLabel()),
+      h('h1', {}, d.title),
+      h('p', { class: 'tagline' }, d.subtitle),
+    ),
+    h('div', { class: 'cs-body', 'data-keep': 'memo' },
     h('div', { class: 'memo-mail' },
       h('div', { class: 'muted small' }, `From: ${d.memo.from}`),
       h('b', {}, d.memo.subject),
       h('p', {}, d.memo.body),
     ),
-    h('div', { class: 'new-apps' },
+    d.apps.length > 0 && h('div', { class: 'new-apps' },
       h('h4', {}, S.dayIndex === 0 ? 'Your apps' : '📲 New apps unlocked'),
       ...APPS.filter((a) => d.apps.includes(a.id)).map((a) =>
         h('div', { class: 'new-app' }, h('span', { class: 'app-icon sm', style: `background:${a.color}` }, a.icon), h('div', {}, h('b', {}, a.name), h('div', { class: 'small muted' }, a.desc))))),
-    h('div', { class: 'rules' }, h('h4', {}, "Today's rules"), ...d.rules.map((r) => h('div', { class: 'rule' }, '📌 ', RULES[r].text))),
-    h('button', { class: 'btn primary big', onclick: startPrep }, 'Start morning prep ☕'),
+    d.rules.length > 0 && h('div', { class: 'rules' }, h('h4', {}, "Today's rules"), ...d.rules.map((r) => h('div', { class: 'rule' }, '📌 ', RULES[r].text))),
+    ),
+    h('div', { class: 'cs-foot' },
+      h('button', { class: 'btn primary big', onclick: startPrep }, d.weekend ? 'Start the weekend 🌴' : 'Start morning prep ☕'),
+    ),
   );
 }
 
@@ -810,10 +830,14 @@ function renderReview() {
     return h('div', { class: 'delta-row' }, h('span', {}, METER_ICON[m], ' ', METER_LABEL[m]),
       h('b', { class: v === 0 ? '' : isGood(m, v) ? 'pos' : 'neg' }, v === 0 ? '—' : fmtEffect(m, v).replace(` ${METER_LABEL[m]}`, '')));
   };
-  const last = S.dayIndex + 1 >= DAYS.length;
-  return h('div', { class: 'card-screen review', 'data-keep': 'review' },
-    h('div', { class: 'eyebrow' }, `End of Day ${S.dayIndex + 1}`),
-    h('h1', {}, '6:00pm. You survived.'),
+  const last = S.dayIndex + 1 >= DAYS.length && !S.endless;
+  const wk = day().weekend;
+  return h('div', { class: 'card-screen review framed' },
+    h('div', { class: 'cs-head' },
+      h('div', { class: 'eyebrow' }, `End of ${dayLabel()}`),
+      h('h1', {}, wk ? (day().weekday === 'Sat' ? 'Saturday, done.' : 'Sunday night. Rested-ish.') : '6:00pm. You survived.'),
+    ),
+    h('div', { class: 'cs-body', 'data-keep': 'review' },
     h('div', { class: 'boss-note' }, h('span', { class: 'avatar' }, '🌱'), h('div', {}, h('b', {}, 'Margo'), h('div', {}, r.bossNote))),
     h('div', { class: 'deltas' }, ...(['standing', 'runway', 'morale', 'stress'] as Meter[]).map(row)),
     r.highlights.length > 0 && h('h4', {}, 'Highlights'),
@@ -822,7 +846,10 @@ function renderReview() {
     ...r.notes.map((n) => h('p', { class: 'small note' }, '🌙 ', n)),
     ...r.newStrikes.map((n) => h('div', { class: 'strike-note' }, '📅 "Quick chat? 🙂" — strike! ', n)),
     h('div', { class: 'strikes big' }, ...[0, 1, 2].map((i) => h('span', { class: i < S.strikes ? 'on' : '' }, '✕'))),
-    h('button', { class: 'btn primary big', onclick: nextDay }, last ? 'See how you did →' : `Sleep. Day ${S.dayIndex + 2} →`),
+    ),
+    h('div', { class: 'cs-foot' },
+      h('button', { class: 'btn primary big', onclick: nextDay }, last ? 'The verdict →' : `Sleep. ${dayAtLabel(S.dayIndex + 1)} →`),
+    ),
   );
 }
 
@@ -840,7 +867,7 @@ function renderOver() {
     h('div', { class: 'logo' }, icon),
     h('h1', {}, title),
     h('p', {}, body),
-    h('p', { class: 'muted small' }, `Day ${S.dayIndex + 1} of 30.`),
+    h('p', { class: 'muted small' }, S.endless ? `You lasted until Day ${S.dayIndex + 1}.` : `${dayLabel()}.`),
     h('div', { class: 'stack' },
       h('button', { class: 'btn primary big', onclick: retryDay }, `Retry Day ${S.dayIndex + 1}`),
       h('button', { class: 'btn big', onclick: newGame }, 'Start over'),
@@ -848,12 +875,37 @@ function renderOver() {
   );
 }
 
+function epilogue(): string[] {
+  const f = (x: string) => S.flags.includes(x);
+  const out: string[] = [];
+  out.push(f('funded') ? '💸 Kestrel invested. Sproutly lives to talk to plants another year.' : '🥀 Kestrel passed. Sproutly is "exploring options". Sam was restructured.');
+  out.push(f('margo-ousted') ? '🌱 Margo is "Chief Visionary Officer" now. She has a new title and no calendar. She calls you anyway.' : f('honest-gerald') ? '🌱 Margo stayed, with a COO. She pretends to hate it.' : '🌱 Margo is still CEO. She has no idea how close it was.');
+  out.push(f('theo-leaves') ? '🛠️ Theo works at Leafly now. He still sends you a black coffee every Friday.' : '🛠️ Theo stayed. His focus block is still sacred. You are the only one allowed near it.');
+  if (f('missed-birthday')) out.push(f('apologized') ? '❤️ Jules forgave the birthday. Mostly. It comes up.' : "💔 Jules hasn't really forgiven the birthday.");
+  else if (f('went-birthday')) out.push("❤️ Jules still talks about the birthday at Lucca's.");
+  if (f('wren-quits')) out.push('🎨 Wren left to make logos for a kombucha brand. Margo is their first customer.');
+  if (f('lied-to-sam') && !f('funded')) out.push('😬 Sam found out you knew. Sam has unfollowed you on everything.');
+  if (f('leafly-you')) out.push('📞 Leafly still calls you. Every quarter. Like clockwork.');
+  return out;
+}
+
 function renderEnd() {
   const m = S.meters;
-  return h('div', { class: 'card-screen end' },
-    h('div', { class: 'logo' }, '🌱'),
-    h('h1', {}, '3 days down. 27 to go.'),
-    h('p', {}, "That's the end of the prototype. You're still employed, which is more than your three predecessors managed."),
+  const fired = m.standing < 40;
+  const [icon, title, body] =
+    m.standing >= 60 ? ['🎉', "You're hired. Permanently.", 'Margo signed the form with a glitter pen. Bev cried a little. You get a desk plant that talks.']
+    : !fired ? ['😅', 'Probation… extended.', "Another 14 days. Bev is very sorry. Margo says you're \"almost there\", which is what she says about the product."]
+    : ['📦', "We're letting you go. Nicely.", "Margo says it's not you, it's the calendar. It's a bit you. Your desk plant is coming with you."];
+  return h('div', { class: 'card-screen end framed' },
+    h('div', { class: 'cs-head' },
+      h('div', { class: 'eyebrow' }, 'Probation review'),
+      h('div', { class: 'logo' }, icon),
+      h('h1', {}, title),
+    ),
+    h('div', { class: 'cs-body', 'data-keep': 'end' },
+    h('p', {}, body),
+    h('h4', {}, 'What happened next'),
+    ...epilogue().map((e) => h('p', { class: 'small note' }, e)),
     h('div', { class: 'deltas' },
       h('div', { class: 'delta-row' }, h('span', {}, '⭐ Standing'), h('b', {}, Math.round(m.standing))),
       h('div', { class: 'delta-row' }, h('span', {}, '💸 Runway'), h('b', {}, fmtMoney(m.runway))),
@@ -861,7 +913,11 @@ function renderEnd() {
       h('div', { class: 'delta-row' }, h('span', {}, '😰 Stress'), h('b', {}, Math.round(m.stress))),
       h('div', { class: 'delta-row' }, h('span', {}, '✕ Strikes'), h('b', {}, `${S.strikes}/3`)),
     ),
-    h('button', { class: 'btn primary big', onclick: newGame }, 'Play again'),
+    ),
+    h('div', { class: 'cs-foot stack' },
+      !fired && h('button', { class: 'btn primary big', onclick: continueEndless }, '♾️ Keep going (endless)'),
+      h('button', { class: `btn ${fired ? 'primary' : ''} big`, onclick: newGame }, 'Play again'),
+    ),
   );
 }
 

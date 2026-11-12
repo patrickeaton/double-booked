@@ -1,0 +1,339 @@
+// The ad-hoc pool: small requests, errands and dilemmas drawn at random each day,
+// on top of the day's hand-written story beats. Seeded, so retrying a day replays the same draw.
+import { TABLE_TIMES, fmt, t } from './data';
+import type { AppId, Choice, DayDef, Effects, EventDef, ExecId, InboxApp, Script } from './types';
+
+type Rng = () => number;
+function mulberry32(seed: number): Rng {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let x = Math.imul(a ^ (a >>> 15), 1 | a);
+    x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const pick = <T,>(r: Rng, xs: T[]): T => xs[Math.floor(r() * xs.length)];
+const chance = (r: Rng, p: number) => r() < p;
+const q15 = (m: number) => Math.round(m / 15) * 15;
+
+const STAKES: Record<'low' | 'mid' | 'high', { reward: Effects; miss: Effects; decline: Effects }> = {
+  low: { reward: { morale: 2 }, miss: { morale: -3 }, decline: { morale: -2 } },
+  mid: { reward: { standing: 3 }, miss: { standing: -5 }, decline: { standing: -3 } },
+  high: { reward: { standing: 5, runway: 1500 }, miss: { standing: -8, runway: -1000 }, decline: { standing: -7 } },
+};
+
+interface MeetT {
+  key: string;
+  from: string;
+  app: InboxApp;
+  title: string;
+  body: string;
+  who: ExecId | 'any' | 'both';
+  dur: number[];
+  stakes: 'low' | 'mid' | 'high';
+  travel?: [number, string, string]; // minutes, place, alternate place
+  remoteOk?: 'fine' | 'meh';
+  overrun?: number[];
+  note?: string;
+}
+
+const MEETINGS: MeetT[] = [
+  { key: 'priya', from: 'Priya (Sales)', app: 'huddle', title: 'Deal review · Priya', body: 'can I steal {exec} for {dur} before {by}? a deal is wobbling 😬', who: 'margo', dur: [15, 30], stakes: 'mid' },
+  { key: 'fern', from: 'Ana (Customer Success)', app: 'huddle', title: "Escalation: a customer's fern is \"sad\"", body: "our app told a customer's fern it was \"disappointing\". they're upset. the customer too. need {exec} for {dur} before {by} 🌿", who: 'any', dur: [15, 30], stakes: 'mid' },
+  { key: 'dev', from: 'Dev (Finance)', app: 'mail', title: 'Budget Q’s · Dev', body: 'Need {dur} with {exec} about "the numbers" before {by}. They\'re fine. Mostly. — Dev', who: 'margo', dur: [30], stakes: 'mid' },
+  { key: 'wren', from: 'Wren', app: 'huddle', title: 'Design crit · Wren', body: '{dur} with {exec} for the new logo? it’s a leaf. but MORE.', who: 'any', dur: [30, 45], stakes: 'low', overrun: [15] },
+  { key: 'sam', from: 'Sam (Marketing)', app: 'huddle', title: 'Billboard sign-off · Sam', body: 'need {exec} to sign off the billboard: "Your plants are talking. Are you listening?" 👀 {dur}, before {by}', who: 'margo', dur: [15], stakes: 'low' },
+  { key: 'greenleaf', from: 'Greenleaf Nurseries', app: 'mail', title: 'Site visit · Greenleaf', body: 'Our biggest customer wants {exec} on-site today, before {by}. "In person, please. The plants can tell."', who: 'margo', dur: [45, 60], stakes: 'high', travel: [20, 'Greenleaf Nurseries', 'Greenleaf’s other site (the far one)'], remoteOk: 'meh' },
+  { key: 'vendor', from: 'Theo', app: 'huddle', title: 'Demo · MossDB', body: 'MossDB want to demo their database. it\'s a database for moss. I need to see it. {dur}, before {by}', who: 'theo', dur: [45, 60], stakes: 'low', travel: [15, 'MossDB HQ', 'MossDB’s “innovation barn”'], remoteOk: 'fine', overrun: [30] },
+  { key: 'cand', from: 'Theo', app: 'huddle', title: 'Interview · Backend candidate', body: 'got a backend candidate who can only do today. {dur}, before {by}. they wrote a compiler for fun. we need them.', who: 'theo', dur: [45], stakes: 'mid', overrun: [-15] },
+  { key: 'press', from: 'The Sprout Report', app: 'mail', title: 'Interview · The Sprout Report', body: 'Could {exec} do a quick {dur} interview before {by}? Our readers (gardeners, mostly) are VERY curious.', who: 'margo', dur: [30], stakes: 'mid', travel: [15, 'Sprout Report studio', 'a "more authentic" community garden'], remoteOk: 'meh' },
+  { key: 'landlord', from: 'Hal (Landlord)', app: 'mail', title: 'Lease chat · Hal', body: 'Hal would like {dur} with {exec} before {by} to "discuss the plants in the lobby". All 41 of them.', who: 'margo', dur: [15], stakes: 'mid' },
+  { key: 'security', from: 'Theo', app: 'huddle', title: 'Security review', body: 'someone set the staging password to "fern123". need {dur} to fix it before {by}. it was me. I set it.', who: 'theo', dur: [30], stakes: 'mid' },
+  { key: 'angel', from: 'Margo', app: 'huddle', title: 'Coffee · angel investor', body: 'an angel wants coffee TODAY 👼 {dur}, before {by}, in person (she doesn\'t "believe in zoom")', who: 'margo', dur: [30], stakes: 'high', travel: [10, 'Ground Up café', 'Ground Up café (the OTHER one)'] },
+  { key: 'pair', from: 'Theo', app: 'huddle', title: 'Pairing · new hire', body: 'new hire is stuck. {dur} of pairing before {by}? they deleted main. it\'s fine. it\'s mostly fine.', who: 'theo', dur: [30], stakes: 'low' },
+  { key: 'allhands', from: 'Bev (People Ops)', app: 'mail', title: 'Fire drill (mandatory) 🔥', body: 'Fire drill today! {exec} need {dur} before {by}. Last time Margo stayed inside "to finish a thought".', who: 'both', dur: [15], stakes: 'low' },
+  { key: 'podcast', from: 'Rooted (podcast)', app: 'mail', title: 'Podcast · "Rooted"', body: 'Could {exec} join "Rooted" for {dur}? Before {by}. We can do it remote… but the vibes are better in the studio.', who: 'margo', dur: [45], stakes: 'mid', travel: [20, 'Rooted studio', 'Rooted’s new studio (a houseboat)'], remoteOk: 'meh' },
+];
+
+const SELF_BOOKS: { title: string; body: string; who: ExecId; kind?: 'personal' }[] = [
+  { title: 'Call w/ lawyer ⚖️', body: "put a call w/ the lawyer at {at}. don't ask. don't move it.", who: 'margo' },
+  { title: 'Kombucha tasting 🍵', body: 'booked a kombucha tasting at {at}. it is a BUSINESS MEETING. probably.', who: 'margo', kind: 'personal' },
+  { title: 'Haircut ✂️', body: 'I have a haircut at {at}. non-negotiable. look at me.', who: 'margo', kind: 'personal' },
+  { title: 'Incident review 🔥', body: "something broke. blocking {at} for an incident review. I don't want to talk about it.", who: 'theo' },
+];
+
+const GIFTS = [
+  { to: 'Greenleaf Nurseries', text: 'Send Greenleaf an apology gift (~$50)', budget: 50, from: 'Ana (Customer Success)', body: 'Greenleaf are upset (the fern thing). can you send them something nice? ~$50. not a mug. please not a mug.' },
+  { to: "Priya's baby shower", text: "Gift for Priya's baby shower (~$40)", budget: 40, from: 'Bev (People Ops)', body: "Priya's baby shower is at 4! Can you grab something from all of us? ~$40. 🍼" },
+  { to: 'Dev (Finance)', text: "Dev's 5-year work anniversary (~$50)", budget: 50, from: 'Margo', body: "it's Dev's 5 year anniversary?? since when do we have 5 years. get him something ~$50 🎉" },
+  { to: 'Hal (Landlord)', text: '"Thank" the landlord (~$40)', budget: 40, from: 'Margo', body: "we need Hal to like us. rent is late. send Hal something ~$40. something that says \"we're good for it\"" },
+];
+
+const DILEMMAS: { from: string; app: InboxApp; body: string; choices: Choice[]; subject?: string; timeout: Effects; timeoutLog: string }[] = [
+  {
+    from: 'Bev (People Ops)', app: 'mail', subject: 'Re: Re: RE: who is this', body: 'Theo replied-all "who is this" to a company-wide email from the CEO. The CEO is Margo. Margo has seen it.',
+    choices: [
+      { label: 'Cover for Theo ("his cat did it")', effects: { morale: 3, standing: -2 } },
+      { label: 'Let it burn', effects: { stress: 3 } },
+      { label: 'Forward it to Margo with "🙃"', effects: { standing: 2, morale: -4 } },
+    ], timeout: { stress: 3 }, timeoutLog: 'The reply-all thread reached 140 messages.',
+  },
+  {
+    from: 'Intern (Kai)', app: 'huddle', body: 'sorry dumb question. what does sproutly actually do',
+    choices: [
+      { label: '"AI that talks to your houseplants"', effects: { morale: 1 } },
+      { label: '"Honestly? Unclear."', effects: { morale: 3, standing: -2 } },
+      { label: 'Send them the 40-slide deck', effects: { morale: -2, stress: -1 } },
+    ], timeout: { morale: -2 }, timeoutLog: 'Kai asked Margo instead. Margo talked for an hour.',
+  },
+  {
+    from: 'Wren', app: 'huddle', body: 'the lobby fern is dying. investors are in today. it is the ONE thing we are supposed to be good at',
+    choices: [
+      { label: 'Buy a new fern ($60)', effects: { runway: -60, standing: 2 } },
+      { label: 'Ask the app what it needs', effects: { morale: 2 }, log: 'The app says the fern "needs space". Wren is concerned.' },
+      { label: 'Turn it to face the wall', effects: { standing: -2, morale: 1 } },
+    ], timeout: { standing: -2 }, timeoutLog: 'An investor asked if the fern was "a metaphor".',
+  },
+  {
+    from: 'Unknown (journalist?)', app: 'messages', body: 'hi! is it true sproutly has 3 weeks of money left? asking for a story 🙂',
+    choices: [
+      { label: '"No comment"', effects: { stress: 2 } },
+      { label: '"We\'re thriving!" (you don\'t know that)', effects: { standing: 2, stress: 5 } },
+      { label: 'Forward to Margo', effects: { standing: -1, stress: -1 }, log: 'Margo: "why are you sending me this. why do they know this."' },
+    ], timeout: { standing: -3 }, timeoutLog: 'The story ran with "Sproutly did not respond".',
+  },
+  {
+    from: 'Theo', app: 'huddle', body: 'can you tell margo I\'m sick today. I\'m not sick. I just can\'t do another pricing meeting',
+    choices: [
+      { label: 'Tell Margo he\'s sick', effects: { morale: 4, stress: 3 }, flag: 'covered-theo' },
+      { label: '"I\'m not lying to Margo"', effects: { morale: -4, standing: 1 } },
+      { label: 'Block "deep work" on his calendar instead', effects: { morale: 2 } },
+    ], timeout: { morale: -3 }, timeoutLog: 'Theo sat through the pricing meeting. His soul left at minute 12.',
+  },
+  {
+    from: 'Margo', app: 'huddle', body: 'can you post on my linkedin for me? something like "humbled to announce" but about nothing specific. just vibes',
+    choices: [
+      { label: 'Write it (humbly)', effects: { standing: 3, stress: 4 } },
+      { label: '"I\'m not your ghostwriter"', effects: { standing: -4 } },
+      { label: 'Post a photo of the lobby fern', effects: { standing: 1, morale: 2 }, log: 'The fern got 400 likes. More than Margo ever has.' },
+    ], timeout: { standing: -2 }, timeoutLog: 'Margo posted it herself. It was about her kombucha.',
+  },
+  {
+    from: 'Dev (Finance)', app: 'mail', subject: 'Kombucha subscription', body: 'Margo\'s kombucha subscription billed us 3 times this month ($240). Cancel 2?',
+    choices: [
+      { label: 'Cancel two', effects: { runway: 160, standing: -2 } },
+      { label: 'Leave it. Do not touch the kombucha.', effects: { runway: -240 } },
+    ], timeout: { runway: -240 }, timeoutLog: 'The kombucha kept coming.',
+  },
+  {
+    from: 'Ana (Customer Success)', app: 'huddle', body: 'support queue is at 212 tickets. can you answer a few?? most are "my plant said something mean"',
+    choices: [
+      { label: 'Answer 20 tickets (ouch)', effects: { morale: 4, stress: 6 } },
+      { label: '"Not my job" (it isn\'t)', effects: { morale: -3 } },
+      { label: 'Write a macro: "Your plant loves you"', effects: { morale: 2, stress: 2 } },
+    ], timeout: { morale: -3 }, timeoutLog: 'Ana answered 212 tickets alone. Ana has questions for HR.',
+  },
+  {
+    from: 'Sam (Marketing)', app: 'huddle', body: 'can I borrow the company card for like 5 mins. for a marketing thing. a marketing thing that is lunch',
+    choices: [
+      { label: 'Sure', effects: { morale: 2, runway: -85 } },
+      { label: 'No', effects: { morale: -2 } },
+    ], timeout: { morale: -1 }, timeoutLog: 'Sam ate a sad desk sandwich.',
+  },
+  {
+    from: 'Someone in #random', app: 'huddle', body: 'WHO microwaved fish 🐟🔥 the entire 3rd floor is evacuating',
+    choices: [
+      { label: 'Order an air purifier ($90)', effects: { runway: -90, morale: 3 } },
+      { label: 'Post a passive-aggressive sign', effects: { morale: -1, stress: -2 } },
+      { label: 'Ignore it (it was Theo)', effects: { morale: -2 } },
+    ], timeout: { morale: -2 }, timeoutLog: 'The fish incident entered company folklore.',
+  },
+];
+
+const CALLS = [
+  {
+    from: 'Mum', lines: ['"Hi love! Just checking in."', '"Are you eating? You sound like you\'re not eating."'],
+    choices: [{ label: 'Chat for a bit', effects: { stress: -6 } }, { label: '"Can\'t talk, Mum. Love you"', effects: { stress: 2 } }],
+    missed: { stress: 2 }, missedLog: 'Mum left a voicemail. It was 4 minutes of her dog barking.',
+  },
+  {
+    from: 'Unknown number', lines: ['"Hi! Recruiter from Leafly."', '"We\'re hiring EAs. Double the pay. Half the… Margo."', '"Interested?"'],
+    choices: [{ label: '"Not interested"', effects: { standing: 1 } }, { label: '"Send me details"', effects: { stress: -4 }, flag: 'leafly-you' }],
+    missed: {}, missedLog: 'Ignored a recruiter. Probably for the best.',
+  },
+  {
+    from: 'Dev (Finance)', lines: ['"Dev here."', '"Margo expensed a $400 \'kombucha fridge\'."', '"Do I approve it?"'],
+    choices: [
+      { label: 'Approve it', effects: { runway: -400, standing: 2 } },
+      { label: 'Reject it', effects: { standing: -3, runway: 0 } },
+      { label: '"Ask Margo" (coward)', effects: { stress: 2 } },
+    ],
+    missed: { stress: 2 }, missedLog: 'Dev approved the fridge. It hums.',
+  },
+];
+
+const WEEKEND: { from: string; app: InboxApp; body: string; choices: Choice[]; timeout: Effects; timeoutLog: string }[] = [
+  {
+    from: 'Margo', app: 'huddle', body: 'r u up? quick q about monday. ok not quick. ok it\'s 6 questions',
+    choices: [{ label: 'Answer all 6', effects: { standing: 3, stress: 6 } }, { label: '"Monday!" 🙂', effects: { standing: -1, stress: -2 } }],
+    timeout: { standing: -2 }, timeoutLog: 'Margo sent 6 more questions. Then "nvm".',
+  },
+  {
+    from: 'Theo', app: 'huddle', body: 'sorry to bug you on a weekend. do you know where the server password is. the real one. not fern123',
+    choices: [{ label: 'Dig through your notes for him', effects: { morale: 4, stress: 4 } }, { label: '"Pretty sure it\'s fern123"', effects: { morale: -2, stress: -1 } }],
+    timeout: { morale: -2 }, timeoutLog: 'Theo guessed. Theo got locked out.',
+  },
+  {
+    from: 'Jules ❤️', app: 'messages', body: 'phone down?? farmers market?? 🥕',
+    choices: [{ label: 'Phone down. Carrots. 🥕', effects: { stress: -10 } }, { label: '"Just one more email…"', effects: { stress: 3, standing: 1 } }],
+    timeout: { stress: 3 }, timeoutLog: 'Jules went to the market alone.',
+  },
+  {
+    from: 'Group chat 🍕', app: 'messages', body: 'pizza tonight? you have to come. we have not seen you since "the job"',
+    choices: [{ label: "I'm in 🍕", effects: { stress: -8, runway: 0 } }, { label: '"Raincheck"', effects: { stress: 2 } }],
+    timeout: { stress: 2 }, timeoutLog: 'The group chat moved on without you.',
+  },
+  {
+    from: 'Wren', app: 'huddle', body: 'is it weird that I\'m working on the logo on a saturday. don\'t answer. I know.',
+    choices: [{ label: '"Go outside, Wren"', effects: { morale: 2 } }, { label: '"Send it, I\'ll look"', effects: { morale: 3, stress: 3 } }],
+    timeout: { morale: 0 }, timeoutLog: 'Wren kept working on the logo.',
+  },
+];
+
+export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a: AppId) => boolean): Script[] {
+  const r = mulberry32(seed);
+  const out: Script[] = [];
+  let n = 0;
+  const id = () => `ah${dayIndex}-${n++}`;
+
+  if (d.weekend) {
+    const pool = [...WEEKEND];
+    for (let i = 0; i < d.adhoc && pool.length; i++) {
+      const w = pool.splice(Math.floor(r() * pool.length), 1)[0];
+      out.push({ at: q15(t('9:30') + r() * 7 * 60) + Math.floor(r() * 10), type: 'msg', msg: { app: w.app, from: w.from, body: w.body, choices: w.choices, expiresIn: 60, timeoutEffects: w.timeout, timeoutLog: w.timeoutLog } });
+    }
+    return out;
+  }
+
+  // Spread the drops across the day.
+  const times: number[] = [];
+  for (let i = 0; i < d.adhoc; i++) times.push(t('9:20') + Math.floor(r() * (t('15:45') - t('9:20'))));
+  times.sort((a, b) => a - b);
+
+  const used = new Set<string>();
+  const kinds: [string, number][] = [
+    ['meeting', 4], ['dilemma', 3], ['call', 1], ['self', 1],
+    ...(has('brew') ? [['coffee', 1] as [string, number]] : []),
+    ...(has('bundl') ? [['gift', 1] as [string, number]] : []),
+    ...(has('tably') ? [['table', 1] as [string, number]] : []),
+  ];
+  const total = kinds.reduce((a, [, w]) => a + w, 0);
+  const execAt = (who: ExecId | 'any' | 'both'): ExecId[] | null => {
+    if (who === 'both') return d.execs.length > 1 ? [...d.execs] : null;
+    if (who === 'any') return [pick(r, d.execs)];
+    return d.execs.includes(who) ? [who] : null;
+  };
+  const names = (xs: ExecId[]) => xs.map((x) => (x === 'margo' ? 'Margo' : 'Theo')).join(' & ');
+
+  for (const at of times) {
+    let kind = 'dilemma';
+    let roll = r() * total;
+    for (const [k, w] of kinds) { if ((roll -= w) < 0) { kind = k; break; } }
+
+    if (kind === 'meeting') {
+      const opts = MEETINGS.filter((m) => !used.has(m.key) && execAt(m.who));
+      if (!opts.length) continue;
+      const m = pick(r, opts);
+      used.add(m.key);
+      const att = execAt(m.who)!;
+      const dur = pick(r, m.dur);
+      const by = Math.min(q15(at + 120 + r() * 90), t('17:00'));
+      const st = STAKES[m.stakes];
+      const ev: EventDef = {
+        id: id(), title: m.title, attendees: att, start: null, duration: dur, deadline: by,
+        reward: st.reward, missPenalty: st.miss, declinePenalty: st.decline, bumpPenalty: m.stakes === 'high' ? { standing: -4 } : {},
+        overrun: m.overrun ? pick(r, m.overrun) : undefined,
+        note: `Must start before ${fmt(by)}.`,
+      };
+      if (m.travel) {
+        ev.travel = m.travel[0];
+        ev.place = m.travel[1];
+        ev.remoteOk = m.remoteOk;
+        if (m.remoteOk && chance(r, 0.3)) ev.remote = true;
+      }
+      const body = m.body.replace('{exec}', names(att)).replace('{dur}', `${dur} min`).replace('{by}', fmt(by));
+      out.push({ at, type: 'request', event: ev, msg: { app: m.app, from: m.from, subject: m.app === 'mail' ? m.title : undefined, body } });
+
+      // Follow-ups: the venue moves, it flips remote/in-person, or someone pushes it.
+      if (m.travel && has('ryde') && chance(r, 0.55)) {
+        const when = at + 45 + Math.floor(r() * 60);
+        if (ev.remote) {
+          out.push({ at: when, type: 'change', id: ev.id, mustBeInPerson: true, msg: { app: 'huddle', from: m.from, body: `update: ${m.title} has to be IN PERSON now. sorry!! 🙏` } });
+        } else if (m.remoteOk && chance(r, 0.5)) {
+          out.push({ at: when, type: 'change', id: ev.id, remote: true, msg: { app: 'huddle', from: m.from, body: `${m.title}: can we do it over video instead? 💻` } });
+        } else {
+          out.push({ at: when, type: 'change', id: ev.id, place: m.travel[2], travel: m.travel[0] + 10, msg: { app: 'huddle', from: m.from, body: `${m.title} is at ${m.travel[2]} now. it's further. sorry!!` } });
+        }
+      } else if (chance(r, 0.25)) {
+        out.push({ at: at + 50 + Math.floor(r() * 50), type: 'nudge', id: ev.id, by: 30, msg: { app: 'huddle', from: m.from, body: `can we push ${m.title} 30 mins? 🙏 (I already moved it, sorry)` } });
+      }
+    } else if (kind === 'dilemma') {
+      const opts = DILEMMAS.filter((x) => !used.has(x.body));
+      if (!opts.length) continue;
+      const x = pick(r, opts);
+      used.add(x.body);
+      out.push({ at, type: 'msg', msg: { app: x.app, from: x.from, subject: x.subject, body: x.body, choices: x.choices, expiresIn: 40, timeoutEffects: x.timeout, timeoutLog: x.timeoutLog } });
+    } else if (kind === 'call') {
+      const opts = CALLS.filter((c) => !used.has(c.from));
+      if (!opts.length) continue;
+      const c = pick(r, opts);
+      used.add(c.from);
+      out.push({ at, type: 'call', call: { ...c } });
+    } else if (kind === 'self') {
+      const opts = SELF_BOOKS.filter((s) => !used.has(s.title) && d.execs.includes(s.who));
+      if (!opts.length) continue;
+      const s = pick(r, opts);
+      used.add(s.title);
+      const start = Math.min(q15(at + 45 + r() * 60), t('17:00'));
+      out.push({
+        at, type: 'insert',
+        event: { id: id(), title: s.title, attendees: [s.who], start, duration: 30, kind: s.kind, bumpPenalty: { standing: -3 }, reward: { morale: 1 }, missPenalty: { standing: -4 }, declinePenalty: { standing: -4 }, note: 'They booked this themselves.' },
+        msg: { app: 'huddle', from: s.who === 'margo' ? 'Margo' : 'Theo', body: s.body.replace('{at}', fmt(start)) },
+      });
+    } else if (kind === 'coffee') {
+      if (used.has('coffee')) continue;
+      used.add('coffee');
+      const x = pick(r, d.execs);
+      const by = at + 40;
+      out.push({
+        at, type: 'task',
+        task: { id: id(), kind: 'coffee', exec: x, text: `Get ${x === 'margo' ? 'Margo' : 'Theo'} a coffee (by ${fmt(by)})`, deadline: by, reward: x === 'margo' ? { standing: 3 } : { morale: 4 }, fail: x === 'margo' ? { standing: -3 } : { morale: -3 } },
+        msg: { app: 'huddle', from: x === 'margo' ? 'Margo' : 'Theo', body: x === 'margo' ? 'coffee. please. my usual. I am a husk ☕' : 'Coffee would be good. The usual. Thank you. (Help.)' },
+      });
+    } else if (kind === 'gift') {
+      const opts = GIFTS.filter((g) => !used.has(g.to));
+      if (!opts.length) continue;
+      const g = pick(r, opts);
+      used.add(g.to);
+      out.push({
+        at, type: 'task',
+        task: { id: id(), kind: 'gift', text: g.text, recipient: g.to, budget: g.budget, deadline: Math.min(at + 150, t('17:30')), reward: { standing: 3 }, fail: { standing: -3 } },
+        msg: { app: 'huddle', from: g.from, body: g.body },
+      });
+    } else if (kind === 'table') {
+      if (used.has('table')) continue;
+      used.add('table');
+      const party = pick(r, [2, 3, 4, 6]);
+      const i0 = Math.floor(r() * (TABLE_TIMES.length - 1));
+      const win: [number, number] = [TABLE_TIMES[i0], TABLE_TIMES[i0 + 1]];
+      const who = pick(r, ['an angel investor', 'Greenleaf', 'the TechLeaf editor', "Margo's old boss"]);
+      out.push({
+        at, type: 'task',
+        task: { id: id(), kind: 'reservation', text: `Dinner with ${who}: ${party} people, ${fmt(win[0])}–${fmt(win[1])}`, party, window: win, deadline: Math.min(at + 150, t('17:30')), reward: { standing: 3 }, fail: { standing: -4 } },
+        msg: { app: 'huddle', from: 'Margo', body: `dinner w/ ${who} tonight!! ${party} of us, ${fmt(win[0])}–${fmt(win[1])}. somewhere nice. Tably it 🍽️` },
+      });
+    }
+  }
+  return out;
+}
