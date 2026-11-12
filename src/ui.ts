@@ -595,17 +595,23 @@ function layoutLanes(evts: CalEvent[]) {
   return out;
 }
 
+/** "3:00–3:30pm" rather than "3:00pm–3:30pm" when both ends share am/pm. */
+function span2(a: number, b: number) {
+  const x = fmt(a), y = fmt(b);
+  return x.slice(-2) === y.slice(-2) ? `${x.slice(0, -2)}–${y}` : `${x}–${y}`;
+}
+
 function renderBlock(e: CalEvent) {
   const start = e.start!;
   const issues = issuesFor(e);
   const bad = issues.some((i) => i.bad && i.icon !== '☕');
   const movable = !e.fixed && e.status === 'scheduled';
   const small = e.duration * PX < 34;
-  const cls = ['evt', `st-${e.status}`, `k-${e.kind ?? 'meeting'}`, bad ? 'has-issue' : '', S.selected === e.id ? 'selected' : '', movable ? 'movable' : '', small ? 'small' : '', e.attendees.length > 1 ? 'multi' : '', e.fresh ? 'fresh' : ''].join(' ');
+  const cls = ['evt', e.duration * PX >= 70 ? 'tall' : '', `st-${e.status}`, `k-${e.kind ?? 'meeting'}`, bad ? 'has-issue' : '', S.selected === e.id ? 'selected' : '', movable ? 'movable' : '', small ? 'small' : '', e.attendees.length > 1 ? 'multi' : '', e.fresh ? 'fresh' : ''].join(' ');
   const el = h('div', { class: cls, style: `top:${(start - CAL_START) * PX}px;height:${Math.max(16, e.duration * PX - 2)}px;--c:${EXECS[e.attendees[0]].color}` },
     e.editedBy && e.status === 'scheduled' && h('span', { class: 'edited-mark', title: `Edited by ${e.editedBy}` }, '✏️'),
     h('div', { class: 'evt-title' }, e.status === 'missed' ? '💥 ' : e.status === 'done' ? '✓ ' : '', e.kind === 'personal' && e.attendees.includes('me') ? '🏠 ' : '', e.title),
-    !small && h('div', { class: 'evt-time' }, `${fmt(start)}–${fmt(start + e.duration)}`, e.overranBy ? ` (+${e.overranBy}m)` : ''),
+    !small && h('div', { class: 'evt-time' }, span2(start, start + e.duration), e.overranBy ? ` (+${e.overranBy}m)` : ''),
     !small && h('div', { class: 'evt-issues' },
       [...(e.status === 'scheduled' ? issues.filter((i) => i.bad).map((i) => i.icon) : []),
         e.remote ? '💻' : '', e.withCoffee ? '☕' : '', e.withCatering ? '🍱' : ''].filter(Boolean).join(' ')),
@@ -621,11 +627,11 @@ function renderOtherBlock(e: CalEvent) {
   const small = e.duration * PX < 34;
   const st = viewDay < S.dayIndex ? e.status : 'scheduled';
   const el = h('div', {
-    class: ['evt', `st-${st}`, `k-${e.kind ?? 'meeting'}`, mine ? 'movable ahead' : 'readonly', S.selected === e.id ? 'selected' : '', small ? 'small' : '', e.attendees.length > 1 ? 'multi' : ''].join(' '),
+    class: ['evt', e.duration * PX >= 70 ? 'tall' : '', `st-${st}`, `k-${e.kind ?? 'meeting'}`, mine ? 'movable ahead' : 'readonly', S.selected === e.id ? 'selected' : '', small ? 'small' : '', e.attendees.length > 1 ? 'multi' : ''].join(' '),
     style: `top:${(e.start! - CAL_START) * PX}px;height:${Math.max(16, e.duration * PX - 2)}px;--c:${EXECS[e.attendees[0]].color}`,
   },
     h('div', { class: 'evt-title' }, st === 'missed' ? '💥 ' : st === 'done' ? '✓ ' : mine ? '📆 ' : '', e.title),
-    !small && h('div', { class: 'evt-time' }, `${fmt(e.start!)}–${fmt(e.start! + e.duration)}`),
+    !small && h('div', { class: 'evt-time' }, span2(e.start!, e.start! + e.duration)),
   );
   if (mine) makeDraggable(el, e.id, true);
   return el;
