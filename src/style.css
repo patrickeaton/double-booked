@@ -444,3 +444,41 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
   .cal-head small { display: none; }
 }
 .edited-mark { position: absolute; top: 2px; right: 4px; font-size: 10px; }
+
+/* Top bar: phase left, date + time centred, controls right. Meters live in Pulse now. */
+.meters { display: none !important; }
+.status-inner { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
+.status-left { font-size: 11px; color: var(--muted); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status-center { display: flex; flex-direction: column; align-items: center; line-height: 1.15; }
+.status-center b { font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.status-center small { font-size: 10px; color: var(--muted); }
+.status-right { justify-self: end; display: flex; gap: 6px; }
+.statusbar { padding: 8px 14px 6px; }
+
+/* Pulse (HR) app */
+.pulse-card { background: #fff; border-radius: 14px; padding: 12px; margin-bottom: 10px; border: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.pulse-card.danger { border-color: #e5484d; box-shadow: 0 0 0 2px rgba(229, 72, 77, 0.15); }
+.pulse-top { display: flex; align-items: center; gap: 10px; }
+.pulse-icon { font-size: 24px; }
+.pulse-name { flex: 1; display: flex; flex-direction: column; }
+.pulse-val { display: flex; flex-direction: column; align-items: flex-end; }
+.pulse-val b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.pulse-card .meter-bar { height: 8px; border-radius: 99px; background: #eee9df; overflow: hidden; display: block; }
+.pulse-card .meter-bar span { display: block; height: 100%; background: var(--c); border-radius: 99px; }
+.pulse-fx { font-size: 12.5px; line-height: 1.35; }
+.pulse-fx.bad { color: #b42318; font-weight: 600; }
+.pulse-strikes { background: #fff; border-radius: 14px; padding: 12px; margin: 4px 0 10px; border: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; gap: 4px; }
+
+/* Stress you can feel */
+.device.tense { box-shadow: inset 0 0 40px rgba(229, 72, 77, 0.18); }
+.device.frazzled { box-shadow: inset 0 0 70px rgba(229, 72, 77, 0.35); }
+.device.frazzled .status-center b { animation: jitter 0.35s infinite; color: #b42318; }
+.device.tense .status-center b { color: #c2410c; }
+@keyframes jitter { 25% { transform: translate(0.5px, -0.5px); } 50% { transform: translate(-0.5px, 0.5px); } 75% { transform: translate(0.5px, 0.5px); } }
+
+/* Locked while you're in a meeting */
+.lockbar { margin: 0 10px 6px; background: var(--ink); color: #fff; border-radius: 12px; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.lockbar span { flex: 1; min-width: 0; }
+.lockbar small { opacity: 0.75; }
+.lockbar .btn { background: #ffd166; color: var(--ink); flex: none; }
+.cal.locked .tray, .cal.locked .cal-grid { pointer-events: none; opacity: 0.55; filter: grayscale(0.4); }

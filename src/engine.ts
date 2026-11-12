@@ -9,6 +9,39 @@ import { generateAdhoc } from './adhoc';
 import type { AppId, CalEvent, Effects, ExecId, Message, MsgDef, Script } from './types';
 
 export const day = () => dayAt(S.dayIndex);
+
+// ── What the meters actually do ──
+export const runwayDays = () => Math.max(0, Math.floor(S.meters.runway / PAYROLL));
+export const cardFrozen = () => runwayDays() < 5;
+export const lowMorale = () => S.meters.morale < 35;
+export const highMorale = () => S.meters.morale >= 70;
+/** Stress makes the day run faster and messages expire sooner. */
+export const stressPace = () => (S.meters.stress >= 80 ? 1.3 : S.meters.stress >= 60 ? 1.15 : 1);
+
+export interface MeterEffect { text: string; good: boolean }
+export function meterEffects(): Record<'standing' | 'runway' | 'morale' | 'stress', MeterEffect[]> {
+  const m = S.meters;
+  const trust = Math.round(Math.max(0.15, Math.min(0.85, 0.25 + (m.standing - 40) / 100)) * 100);
+  return {
+    standing: [
+      { text: `Margo takes your advice about ${trust}% of the time.`, good: trust >= 50 },
+      m.standing < 25 ? { text: 'One bad day from being fired.', good: false } : m.standing >= 60 ? { text: 'On track to pass probation (60+).', good: true } : { text: 'Review: 60+ hired, 40+ extended, under 40 let go.', good: m.standing >= 40 },
+      { text: 'Lose 15+ in one day and it\'s a strike.', good: true },
+    ],
+    runway: [
+      { text: `${runwayDays()} days of payroll left ($${PAYROLL.toLocaleString()} a weekday).`, good: runwayDays() >= 8 },
+      cardFrozen() ? { text: '🧊 Company card frozen: spending comes out of your pocket (stress).', good: false } : { text: 'Under 5 days, Finance freezes the company card.', good: true },
+    ],
+    morale: lowMorale()
+      ? [{ text: 'Low morale: meetings drag on 10 min longer.', good: false }, { text: 'Kendall is more likely to "help".', good: false }]
+      : highMorale()
+        ? [{ text: 'High morale: once a day, a teammate covers a meeting you would have missed.', good: true }, { text: 'Kendall is on their best behaviour.', good: true }]
+        : [{ text: 'Under 35, meetings start to drag. Over 70, teammates cover for you.', good: true }],
+    stress: stressPace() > 1
+      ? [{ text: `Frazzled: the day runs ${Math.round((stressPace() - 1) * 100)}% faster.`, good: false }, ...(m.stress >= 80 ? [{ text: 'Messages expire sooner. Burnout at 100.', good: false }] : [])]
+      : [{ text: 'Calm. Over 60 the day speeds up; at 100 you burn out.', good: true }, { text: 'Lunch, your own errands and weekends bring it down.', good: true }],
+  };
+}
 /** Today's calendars, minus anyone who has left (e.g. Dana after the board vote). */
 export const activeExecs = (): ExecId[] => day().execs.filter((x) => !S.flags.includes(`gone-${x}`));
 export const unlockedApps = (): AppId[] => DAYS.slice(0, S.dayIndex + 1).flatMap((d) => d.apps);
@@ -107,7 +140,7 @@ export function setupDay(i: number) {
   S.orders = [];
   S.log = [];
   S.call = null;
-  S.queue = [...d.script, ...generateAdhoc(i, { ...d, execs: d.execs.filter((x) => !S.flags.includes(`gone-${x}`)) }, S.seed + i * 7919, hasApp)].map((s) => ({ ...s })).sort((a, b) => a.at - b.at);
+  S.queue = [...d.script, ...generateAdhoc(i, { ...d, execs: d.execs.filter((x) => !S.flags.includes(`gone-${x}`)) }, S.seed + i * 7919, hasApp, S.meters.morale)].map((s) => ({ ...s })).sort((a, b) => a.at - b.at);
   bookings.length = 0;
   S.selected = null;
   S.openMail = null;
@@ -163,7 +196,7 @@ function loop(ts: number): boolean {
   last = ts;
   if (!S.paused) {
     acc += dt * S.speed;
-    const perMin = day().weekend ? MS_PER_MIN / 2 : MS_PER_MIN;
+    const perMin = (day().weekend ? MS_PER_MIN / 2 : MS_PER_MIN) / stressPace();
     while (acc >= perMin && S.phase === 'day') {
       acc -= perMin;
       advance();
@@ -209,8 +242,7 @@ function advance() {
   for (const e of S.events) {
     if (e.withRide && e.remote && e.travel && e.start !== null && ['scheduled', 'running'].includes(e.status) && now >= e.start - e.travel) {
       e.withRide = false;
-      S.meters.runway -= RIDE_COST;
-      spend(`Ryde · no-show fee (${e.title})`, RIDE_COST);
+      charge(`Ryde · no-show fee (${e.title})`, RIDE_COST);
       applyEffects({ stress: 4 }, `A Ryde driver waited outside for ${e.title}. It was remote. You were charged anyway.`);
       banner('ryde', '🚕 Driver waiting…', `Nobody came out. ${e.title} is remote. $${RIDE_COST} no-show fee.`);
     }
@@ -422,6 +454,9 @@ function startEvent(e: CalEvent) {
     }
   }
   e.planned = e.duration;
+  if (lowMorale() && e.kind !== 'personal' && !e.fixed && e.attendees.some((a) => a !== 'me')) {
+    e.overrun = (e.overrun ?? 0) + 10;
+  }
   if (e.overrun) {
     e.duration = Math.max(10, e.duration + e.overrun);
     e.overranBy = e.overrun;
@@ -466,6 +501,26 @@ export function resizeEvent(id: string, delta: number) {
   if (!e || !canResize(e)) return;
   const max = e.start !== null ? DAY_END - e.start : 180;
   e.duration = Math.max(15, Math.min(max, e.duration + delta));
+  dirty();
+}
+
+/** The meeting you're in right now (anything running on your own calendar). While it runs, your calendar is locked. */
+export const myMeeting = () => S.events.find((e) => e.status === 'running' && e.attendees.includes('me'));
+
+/** Leave the meeting you're in. Shared meetings carry on without you; your own end early. */
+export function stepOut() {
+  const e = myMeeting();
+  if (!e || e.start === null) return;
+  if (e.attendees.length > 1) {
+    e.attendees = e.attendees.filter((a) => a !== 'me');
+    applyEffects({ standing: e.fixed ? -4 : -2 }, `Stepped out of ${e.title} early.`);
+    banner('calendar', '🚪 Stepped out', `${e.title} carries on without you.`);
+    dirty();
+    return;
+  }
+  if (canWrap(e)) return wrapUpNow(e.id);
+  e.duration = Math.max(5, S.now - e.start);
+  finishEvent(e);
   dirty();
 }
 
@@ -516,6 +571,16 @@ export function bumpEvent(id: string) {
 }
 
 function missEvent(e: CalEvent, text: string) {
+  const covered = `covered-${S.dayIndex}`;
+  if (highMorale() && !e.strikeOnMiss && !e.attendees.includes('me') && !S.flags.includes(covered)) {
+    S.flags.push(covered);
+    e.status = 'done';
+    if (S.selected === e.id) S.selected = null;
+    const who = ['Wren', 'Priya', 'Ana', 'Sam'][S.dayIndex % 4];
+    applyEffects(halveFx(e.reward ?? {}), `${who} covered "${e.title}" for you. (High morale pays.)`);
+    banner('calendar', `🙌 ${who} covered it`, `${e.title}: handled. You owe ${who} a coffee.`);
+    return;
+  }
   e.status = 'missed';
   if (S.selected === e.id) S.selected = null;
   applyEffects({ ...(e.missPenalty ?? { standing: -5 }), stress: ((e.missPenalty?.stress ?? 0) + 3) }, text);
@@ -672,7 +737,7 @@ const APP_OF: Record<string, AppId> = { mail: 'mail', huddle: 'huddle', messages
 export function addMessage(def: MsgDef, quiet = false): Message {
   if (!hasApp(def.app)) def = { ...def, app: 'huddle' }; // apps you don't have yet fall back to chat
   const m: Message = { ...def, id: `m${uid()}`, at: S.now, read: false, day: S.dayIndex };
-  if (def.choices && def.expiresIn) m.expires = S.now + def.expiresIn;
+  if (def.choices && def.expiresIn) m.expires = S.now + Math.round(def.expiresIn * (S.meters.stress >= 80 ? 0.7 : 1));
   S.messages.push(m);
   if (!quiet && S.app !== APP_OF[def.app]) {
     banner(APP_OF[def.app], def.from, def.subject ?? def.body);
@@ -856,16 +921,13 @@ export const addonCost = (e: CalEvent) => ({ coffee: COFFEE_ADDON * e.attendees.
 function chargeAddons(e: CalEvent) {
   const c = addonCost(e);
   if (e.withCoffee) {
-    S.meters.runway -= c.coffee;
-    spend(`Brew · coffee for ${e.title}`, c.coffee);
+    charge(`Brew · coffee for ${e.title}`, c.coffee);
   }
   if (e.withRide && travelOf(e)) {
-    S.meters.runway -= RIDE_COST * 2;
-    spend(`Ryde · ${e.title}`, RIDE_COST * 2);
+    charge(`Ryde · ${e.title}`, RIDE_COST * 2);
   }
   if (e.withCatering) {
-    S.meters.runway -= c.catering;
-    spend(`Catering · ${e.title}`, c.catering);
+    charge(`Catering · ${e.title}`, c.catering);
   }
 }
 
@@ -894,6 +956,18 @@ const spend = (label: string, amount: number) => {
   S.ledger.unshift({ at: S.now, label, amount: -amount });
 };
 
+/** Company spend. Under 5 days of runway, Finance freezes the card and it comes out of your pocket (stress). */
+function charge(label: string, amount: number) {
+  if (cardFrozen()) {
+    S.ledger.unshift({ at: S.now, label: `${label} (your card — company card frozen)`, amount: 0 });
+    applyEffects({ stress: Math.max(1, Math.round(amount / 15)) }, `Company card frozen. Paid $${amount} yourself: ${label}.`, true);
+    banner('card', '🧊 Card frozen', `Paid $${amount} yourself. Finance says "soon".`);
+    return;
+  }
+  S.meters.runway -= amount;
+  spend(label, amount);
+}
+
 export const earliestDelivery = () => (S.phase === 'day' ? S.now + 15 : DAY_START);
 
 export function orderDrink(spec: string, to: string, deliverAt?: number | null) {
@@ -902,8 +976,7 @@ export function orderDrink(spec: string, to: string, deliverAt?: number | null) 
   const at = Math.max(earliestDelivery(), deliverAt ?? 0);
   S.orders.push({ id: `o${uid()}`, app: 'brew', item: spec, label: name, to, price, arriveAt: at, arrived: false, paidBy: to === 'me' ? 'me' : 'company' });
   if (to !== 'me') {
-    S.meters.runway -= price;
-    spend(`Brew · ${name}`, price);
+    charge(`Brew · ${name}`, price);
   }
   const who = to === 'me' ? 'you' : EXECS[to as ExecId].short;
   banner('brew', `${drinkEmoji(spec)} Order placed`, `${name} for ${who}. Arrives ${fmt(at)}.`);
@@ -921,8 +994,7 @@ export function buyProduct(productId: string, to: string, pay: 'company' | 'me')
   S.sheet = null;
 
   if (pay === 'company') {
-    S.meters.runway -= p.price;
-    spend(`Bundl · ${p.name}`, p.price);
+    charge(`Bundl · ${p.name}`, p.price);
   }
 
   const task = S.tasks.find((x) => x.status === 'open' && x.kind === 'gift' && x.recipient === to);
@@ -942,6 +1014,7 @@ export function buyProduct(productId: string, to: string, pay: 'company' | 'me')
   banner('bundl', '📦 Order placed', `${p.name} → ${to === 'me' ? 'you' : to}`);
 }
 
+const halveFx = (e: Effects): Effects => Object.fromEntries(Object.entries(e).map(([k, v]) => [k, Math.round((v as number) / 2)]));
 const halve = (e: Effects): Effects => Object.fromEntries(Object.entries(e).map(([k, v]) => [k, Math.round((v as number) / 2)]));
 
 function deliver(o: (typeof S.orders)[number]) {

@@ -17,7 +17,7 @@ export const DAY_START = t('9:00');
 export const DAY_END = t('18:00');
 export const CAL_START = t('8:30');
 export const CAL_END = t('18:30');
-export const PAYROLL = 2500; // weekdays only
+export const PAYROLL = 3000; // weekdays only. Runway is shown as days of payroll left.
 
 export const EXECS: Record<ExecId, Exec> = {
   margo: {

@@ -226,7 +226,7 @@ const WEEKEND: { from: string; app: InboxApp; body: string; choices: Choice[]; t
   },
 ];
 
-export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a: AppId) => boolean): Script[] {
+export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a: AppId) => boolean, morale = 60): Script[] {
   const r = mulberry32(seed);
   const out: Script[] = [];
   let n = 0;
@@ -389,7 +389,7 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
   if (dayIndex >= 7) {
     const k = 2 + (r() < 0.5 ? 1 : 0);
     for (let i = 0; i < k; i++) {
-      out.push({ at: t('9:40') + Math.floor(r() * (t('16:00') - t('9:40'))), type: 'kendall', mode: r() < 0.3 ? 'sabotage' : 'help' });
+      out.push({ at: t('9:40') + Math.floor(r() * (t('16:00') - t('9:40'))), type: 'kendall', mode: r() < (morale < 35 ? 0.5 : morale >= 70 ? 0.15 : 0.3) ? 'sabotage' : 'help' });
     }
   }
   return out;

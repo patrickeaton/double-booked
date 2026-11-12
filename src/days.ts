@@ -32,7 +32,7 @@ export const DAYS: DayDef[] = [
     title: 'Welcome to Sproutly',
     weekday: 'Wed',
     adhoc: 1,
-    apps: ['calendar', 'huddle', 'notes', 'brew'],
+    apps: ['calendar', 'huddle', 'notes', 'brew', 'pulse'],
     subtitle: 'The AI that talks to your houseplants.',
     memo: {
       from: 'Bev (People Ops)',
@@ -233,7 +233,7 @@ export const DAYS: DayDef[] = [
       { at: t('12:40'), type: 'msg', msg: { app: 'messages', from: 'Ollie (flatmate)', body: "so. the landlord is selling the flat?? we have 3 weeks to move out 😬 don't panic. (panic a little)" } },
       {
         at: t('9:35'), type: 'msg',
-        msg: { app: 'mail', from: 'Finance Bot 🤖', subject: 'Runway check', body: "At current burn, Sproutly has about 16 days of money left.\n\nKestrel Ventures' decision is due in two weeks.\n\nThat's fine! That's fine. 🤖" },
+        msg: { app: 'mail', from: 'Finance Bot 🤖', subject: 'Runway check', body: "At current burn, Sproutly has about 10 days of money left.\n\nKestrel Ventures' decision is due in two weeks.\n\nThat's fine! That's fine. 🤖" },
       },
       {
         at: t('10:15'), type: 'task',

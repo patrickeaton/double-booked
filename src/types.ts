@@ -2,7 +2,7 @@
 export type ExecId = 'margo' | 'theo' | 'dana' | 'me' | 'team';
 export type Meter = 'standing' | 'runway' | 'morale' | 'stress';
 export type Effects = Partial<Record<Meter, number>>;
-export type AppId = 'calendar' | 'mail' | 'huddle' | 'messages' | 'brew' | 'bundl' | 'card' | 'notes' | 'ryde' | 'tably' | 'presto';
+export type AppId = 'calendar' | 'mail' | 'huddle' | 'messages' | 'brew' | 'bundl' | 'card' | 'notes' | 'ryde' | 'tably' | 'presto' | 'pulse';
 export type InboxApp = 'mail' | 'huddle' | 'messages';
 
 export interface Exec {

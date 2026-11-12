@@ -59,7 +59,7 @@ export interface GameState {
   seq: number;
 }
 
-export const START_METERS: Record<Meter, number> = { standing: 60, runway: 40000, morale: 60, stress: 20 };
+export const START_METERS: Record<Meter, number> = { standing: 60, runway: 30000, morale: 60, stress: 20 };
 
 export const S: GameState = {
   phase: 'title',

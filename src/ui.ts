@@ -3,7 +3,7 @@ import { STEP_LABEL, drinkEmoji, drinkName, drinkPrice, optionsFor, specString, 
 import { CAL_END, CAL_START, DAY_END, EXECS, isBoss, PAYROLL, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, TABLE_TIMES, fmt } from './data';
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
-  minStart, newGame, nextDay, hasApp, isNewApp, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
+  minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
   toggleSpeed, unschedule,
 } from './engine';
 import { MAX_SHORTCUTS, addShortcut, removeShortcut, runShortcut, shortcutLabel } from './shortcuts';
@@ -29,6 +29,7 @@ const APPS: { id: AppId; name: string; icon: string; color: string; desc: string
   { id: 'calendar', name: 'Calendar', icon: '📅', color: '#ff5b5b', desc: 'Where the chaos lives.' },
   { id: 'huddle', name: 'Huddle', icon: '💬', color: '#7b5cff', desc: 'Work chat. Tone is everything.' },
   { id: 'notes', name: 'Notes', icon: '📝', color: '#f5c518', desc: 'Rules, to-dos and what everyone drinks.' },
+  { id: 'pulse', name: 'Pulse', icon: '💓', color: '#e5484d', desc: 'Your HR file: you, the team, the company, your job.' },
   { id: 'brew', name: 'Brew', icon: '☕', color: '#a86b3c', desc: 'Coffee, now or scheduled.' },
   { id: 'mail', name: 'Mail', icon: '✉️', color: '#3d8bff', desc: 'Formal requests and Reply-All traps.' },
   { id: 'messages', name: 'Messages', icon: '💚', color: '#2fc463', desc: 'Your actual life. Remember that?' },
@@ -110,7 +111,8 @@ function render() {
   refs.device.classList.toggle('is-day', S.phase === 'day');
 
   refs.status.replaceChildren(renderStatus());
-  refs.meters.replaceChildren(...renderMeters());
+  refs.device.classList.toggle('tense', S.phase === 'day' && S.meters.stress >= 60 && S.meters.stress < 80);
+  refs.device.classList.toggle('frazzled', S.phase === 'day' && S.meters.stress >= 80);
 
   keepScroll(refs.main, () => {
     const panes: HTMLElement[] = [];
@@ -187,8 +189,8 @@ function renderStatus() {
   const time = S.phase === 'prep' || S.phase === 'memo' ? fmt(S.now) : S.phase === 'day' ? fmt(S.now) : '—';
   const label = S.phase === 'prep' ? 'Morning prep' : S.phase === 'day' ? (S.paused ? 'Paused' : day().weekend ? 'Weekend 🌴' : 'Workday') : '';
   return h('div', { class: 'status-inner' },
-    h('span', { class: 'clock' }, time, label && h('small', {}, label)),
-    h('span', { class: 'day-pill' }, dayLabel(true)),
+    h('span', { class: 'status-left' }, label),
+    h('span', { class: 'status-center' }, h('b', {}, `${dateFor(S.dayIndex)} · ${time}`), h('small', {}, S.dayIndex < DAYS.length ? `Day ${S.dayIndex + 1} of ${DAYS.length}` : `Endless · Day ${S.dayIndex + 1}`)),
     h('span', { class: 'status-right' },
       S.phase === 'day' && h('button', { class: 'chip-btn', onclick: toggleSpeed, title: 'Speed' }, `${S.speed}×`),
       S.phase === 'day' && h('button', { class: 'chip-btn', onclick: togglePause, title: 'Pause' }, S.paused ? '▶' : '⏸'),
@@ -197,6 +199,48 @@ function renderStatus() {
 }
 
 const METER_ICON: Record<Meter, string> = { standing: '⭐', runway: '💸', morale: '🤝', stress: '😰' };
+
+/** The game starts on Wednesday 4 March. */
+const dateFor = (i: number) => new Date(2026, 2, 4 + i).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+
+const dangerCount = () => {
+  const m = S.meters;
+  return [m.standing <= 25, runwayDays() < 5, m.morale <= 25, m.stress >= 75].filter(Boolean).length + (S.strikes >= 2 ? 1 : 0);
+};
+
+function renderPulse() {
+  const fx = meterEffects();
+  const m = S.meters;
+  const delta = (k: Meter) => Math.round(m[k] - S.startMeters[k]);
+  const card = (k: Meter, value: string, pct: number, danger: boolean, blurb: string) => {
+    const d = delta(k);
+    return h('div', { class: `pulse-card ${danger ? 'danger' : ''}`, style: `--c:${PULSE_COLOR[k]}` },
+      h('div', { class: 'pulse-top' },
+        h('span', { class: 'pulse-icon' }, METER_ICON[k]),
+        h('div', { class: 'pulse-name' }, h('b', {}, METER_LABEL[k]), h('small', { class: 'muted' }, blurb)),
+        h('div', { class: 'pulse-val' }, h('b', {}, value), d !== 0 && h('small', { class: isGood(k, d) ? 'pos' : 'neg' }, `${d > 0 ? '+' : ''}${k === 'runway' ? fmtMoney(d) : d} today`)),
+      ),
+      h('div', { class: 'meter-bar' }, h('span', { style: `width:${Math.max(0, Math.min(100, pct))}%` })),
+      ...fx[k as keyof typeof fx].map((e) => h('div', { class: `pulse-fx ${e.good ? '' : 'bad'}` }, e.good ? '• ' : '⚠️ ', e.text)),
+    );
+  };
+  return h('div', { class: 'app pulse' },
+    head('Pulse', 'Your HR file (Bev can see this)'),
+    h('div', { class: 'scroll', 'data-keep': 'pulse' },
+      h('div', { class: 'pulse-strikes' },
+        h('b', {}, 'Strikes'), h('div', { class: 'strikes big' }, ...[0, 1, 2].map((i) => h('span', { class: i < S.strikes ? 'on' : '' }, '✕'))),
+        h('small', { class: 'muted' }, 'Three and you are out.'),
+        ...S.strikeNotes.map((n) => h('div', { class: 'small neg' }, '📅 ', n)),
+      ),
+      card('standing', String(Math.round(m.standing)), m.standing, m.standing <= 25, 'Your job. Margo\'s trust.'),
+      card('runway', `${runwayDays()} days`, (runwayDays() / 15) * 100, cardFrozen(), `The company. ${fmtMoney(m.runway)} in the bank.`),
+      card('morale', String(Math.round(m.morale)), m.morale, m.morale <= 25, 'The team. Will they help you?'),
+      card('stress', String(Math.round(m.stress)), m.stress, m.stress >= 75, stressPace() > 1 ? 'You. Frazzled.' : 'You.'),
+    ),
+  );
+}
+
+const PULSE_COLOR: Record<Meter, string> = { standing: '#f5b700', runway: '#3d8bff', morale: '#2fc463', stress: '#e5484d' };
 
 function renderMeters() {
   const items = (['standing', 'runway', 'morale', 'stress'] as Meter[]).map((m) => {
@@ -222,6 +266,7 @@ function badgeFor(app: AppId): number {
   if (app === 'mail' || app === 'huddle' || app === 'messages')
     return S.messages.filter((m) => m.app === app && (!m.read || (m.choices && m.chosen === undefined))).length;
   if (app === 'notes') return S.tasks.filter((t) => t.status === 'open').length;
+  if (app === 'pulse') return dangerCount();
   return 0;
 }
 
@@ -309,6 +354,15 @@ function renderCalendar() {
       heads,
       h('div', { class: 'cal-grid', style: `height:${height}px` }, gutter, ...cols)));
 
+  const busy = S.phase === 'day' ? myMeeting() : undefined;
+  if (busy) {
+    if (S.selected) S.selected = null;
+    const lock = h('div', { class: 'lockbar' },
+      h('span', {}, '🔒 ', h('b', {}, `You're in "${busy.title}"`), h('small', {}, ` until ${fmt(busy.start! + busy.duration)}. Calendar locked.`)),
+      h('button', { class: 'btn', onclick: stepOut }, busy.attendees.length > 1 ? 'Step out' : 'Wrap up'),
+    );
+    return h('div', { class: 'app cal locked' }, header, lock, tray, scroller);
+  }
   return h('div', { class: `app cal ${sel ? 'placing' : ''}` }, header, tray, selBar, scroller);
 }
 
@@ -518,6 +572,7 @@ function renderApp(app: AppId): HTMLElement {
     case 'bundl': return renderBundl();
     case 'card': return renderCard$();
     case 'notes': return renderNotes();
+    case 'pulse': return renderPulse();
     case 'presto': return renderPresto();
     case 'ryde': return renderRyde();
     case 'tably': return renderTably();
