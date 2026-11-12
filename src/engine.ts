@@ -3,6 +3,7 @@ import { drinkEmoji, drinkMatch, drinkName, drinkPrice } from './drinks';
 import { CAL_START, DAY_END, DAY_START, EXECS, PAYROLL, PREP_TIME, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, fmt } from './data';
 import {
   S, START_METERS, addStrike, applyEffects, banner, dirty, fmtMoney, readSave, uid, writeSave, clearSave,
+  about, fxFor, relOf, REL_PEOPLE,
 } from './state';
 import { offerShortcut } from './shortcuts';
 import { generateAdhoc } from './adhoc';
@@ -25,7 +26,7 @@ export function meterEffects(): Record<'standing' | 'runway' | 'morale' | 'stres
   const m = S.meters;
   const kendallHere = S.dayIndex >= 7;
   const adviceHere = S.dayIndex >= 2;
-  const trust = 0.25 + (m.standing - 40) / 100;
+  const trust = 0.25 + (relOf('margo') - 40) / 100;
   const trustLine: MeterEffect =
     trust >= 0.65 ? { text: 'Margo trusts you. She usually takes your advice.', good: true }
     : trust >= 0.45 ? { text: 'Margo is starting to trust you. Sometimes she listens.', good: true }
@@ -125,6 +126,7 @@ export function newGame() {
   S.future = {};
   S.past = {};
   S.tickets = [];
+  S.rel = {};
   S.messages = [];
   S.kendall = { helped: 0, sabotaged: 0 };
   S.shortcuts = [];
@@ -152,6 +154,7 @@ export function continueGame() {
   S.future = save.future ?? {};
   S.past = save.past ?? {};
   S.tickets = save.tickets ?? [];
+  S.rel = save.rel ?? {};
   S.carry = [];
   setupDay(save.dayIndex);
 }
@@ -336,7 +339,7 @@ function advance() {
   if (S.call && S.call.status === 'ringing' && now >= S.call.ringUntil) {
     const c = S.call;
     S.call = null;
-    applyEffects(c.missed, c.missedLog ?? `Missed a call from ${c.from}.`);
+    fxFor([c.from], c.missed, c.missedLog ?? `Missed a call from ${c.from}.`);
     addMessage({ app: 'messages', from: `Voicemail · ${c.from}`, body: c.lines.join(' ') });
   }
 
@@ -344,7 +347,7 @@ function advance() {
   for (const m of S.messages) {
     if (m.choices && m.chosen === undefined && m.expires !== undefined && now >= m.expires) {
       m.chosen = -1;
-      applyEffects(m.timeoutEffects ?? { stress: 3 }, m.timeoutLog ?? `Ignored ${m.from}.`);
+      fxFor([m.from], m.timeoutEffects ?? { stress: 3 }, m.timeoutLog ?? `Ignored ${m.from}.`);
     }
   }
 
@@ -352,7 +355,7 @@ function advance() {
   for (const task of S.tasks) {
     if (task.status === 'open' && now >= task.deadline) {
       task.status = 'failed';
-      applyEffects(task.fail, `Failed: ${task.text}`);
+      fxFor(taskWho(task), task.fail, `Failed: ${task.text}`);
       banner('notes', '❌ Task failed', task.text);
     }
   }
@@ -386,7 +389,7 @@ function fire(s: Script) {
       addMessage(s.msg);
       break;
     case 'request': {
-      S.events.push({ ...s.event, baseDuration: s.event.duration, status: 'pending', fresh: true });
+      S.events.push({ ...s.event, from: s.event.from ?? s.msg?.from, baseDuration: s.event.duration, status: 'pending', fresh: true });
       if (s.event.dueDay !== undefined && !S.endless && S.dayIndex < DAYS.length) S.events[S.events.length - 1].dueDay = Math.min(s.event.dueDay, DAYS.length - 1);
       if (s.msg) addMessage(s.msg);
       banner('calendar', '📥 New request', s.event.title);
@@ -472,9 +475,22 @@ function fire(s: Script) {
 
 // ───────────────────────────── events ─────────────────────────────
 
+/** Who a meeting is about: the execs in it, and whoever asked for it. */
+function eventPeople(e: CalEvent | undefined): string[] {
+  if (!e) return [];
+  return [...e.attendees.filter((a) => a !== 'me' && a !== 'team'), ...(e.from ? [e.from] : [])];
+}
+/** Whose rule it is. */
+const RULE_WHO: Record<string, string> = { theoFocus: 'theo', margoMorning: 'margo', danaShort: 'dana', max60: 'margo' };
+/** Who a task is for: the exec, the recipient, or anyone named in it. */
+const taskWho = (t: { exec?: string; recipient?: string; text: string }) => [t.exec, t.recipient, ...REL_PEOPLE.filter((k) => new RegExp(`\\b${k}\\b`, 'i').test(t.text))];
+
 const execNames = (ids: ExecId[]) => ids.map((i) => EXECS[i].short).join(' & ');
 
 function startEvent(e: CalEvent) {
+  return about(eventPeople(e), () => startEventRaw(e), 0.5);
+}
+function startEventRaw(e: CalEvent) {
   if (e.kind === 'focus' || e.kind === 'work') {
     e.status = 'running';
     return;
@@ -502,7 +518,7 @@ function startEvent(e: CalEvent) {
 
   for (const id of day().rules) {
     const r = RULES[id];
-    if (ruled(e) && r.check(e)) applyEffects(r.penalty, `Broke a rule (${r.short}): ${e.title}`);
+    if (ruled(e) && r.check(e)) fxFor([RULE_WHO[id]], r.penalty, `Broke a rule (${r.short}): ${e.title}`);
   }
   if (e.window && e.start !== null && (e.start < e.window[0] || e.start > e.window[1])) {
     applyEffects({ standing: -4 }, `Wrong time for ${e.title}`);
@@ -544,6 +560,9 @@ function startEvent(e: CalEvent) {
 }
 
 function finishEvent(e: CalEvent) {
+  return about(eventPeople(e), () => finishEventRaw(e), 0.5);
+}
+function finishEventRaw(e: CalEvent) {
   e.status = 'done';
   if (e.kind === 'work') return finishWork(e);
   if (e.kind === 'focus') {
@@ -627,6 +646,9 @@ export function bumpPenaltyFor(e: CalEvent): Effects {
 }
 
 export function bumpEvent(id: string) {
+  return about(eventPeople(findEvent(id)), () => bumpEventRaw(id));
+}
+function bumpEventRaw(id: string) {
   const e = findEvent(id);
   if (!e || !canBump(e)) return;
   const fx = bumpPenaltyFor(e);
@@ -656,6 +678,9 @@ export function bumpEvent(id: string) {
 }
 
 function missEvent(e: CalEvent, text: string) {
+  return about(eventPeople(e), () => missEventRaw(e, text), 0.8);
+}
+function missEventRaw(e: CalEvent, text: string) {
   const covered = `covered-${S.dayIndex}`;
   if (highMorale() && !e.strikeOnMiss && !e.attendees.includes('me') && !S.flags.includes(covered)) {
     S.flags.push(covered);
@@ -842,6 +867,9 @@ export function unschedule(id: string) {
 }
 
 export function declineEvent(id: string) {
+  return about(eventPeople(findEvent(id)), () => declineEventRaw(id));
+}
+function declineEventRaw(id: string) {
   const e = findEvent(id);
   if (!e || e.fixed || (e.status !== 'pending' && e.status !== 'scheduled')) return;
   e.status = 'declined';
@@ -932,6 +960,9 @@ export function addMessage(def: MsgDef, quiet = false): Message {
 }
 
 export function choose(msgId: string, idx: number) {
+  return about([S.messages.find((x) => x.id === msgId)?.from], () => chooseRaw(msgId, idx), 1.5);
+}
+function chooseRaw(msgId: string, idx: number) {
   const m = S.messages.find((x) => x.id === msgId);
   if (!m || !m.choices || m.chosen !== undefined) return;
   m.chosen = idx;
@@ -939,7 +970,7 @@ export function choose(msgId: string, idx: number) {
   let outcome = idx;
   if (m.advice && idx !== m.advice.gut) {
     // Margo listens more when she trusts you.
-    const p = Math.max(0.15, Math.min(0.85, 0.25 + (S.meters.standing - 40) / 100));
+    const p = Math.max(0.15, Math.min(0.85, 0.25 + (relOf('margo') - 40) / 100));
     if (Math.random() > p) outcome = m.advice.gut;
   }
   m.outcome = outcome;
@@ -1090,6 +1121,9 @@ export function answerCall() {
 }
 
 export function declineCall() {
+  return about([S.call?.from], () => declineCallRaw());
+}
+function declineCallRaw() {
   const c = S.call;
   if (!c) return;
   S.call = null;
@@ -1097,6 +1131,9 @@ export function declineCall() {
 }
 
 export function chooseCall(idx: number) {
+  return about([S.call?.from], () => chooseCallRaw(idx), 1.5);
+}
+function chooseCallRaw(idx: number) {
   const c = S.call;
   if (!c) return;
   S.call = null;
@@ -1215,7 +1252,7 @@ function finishWork(e: CalEvent) {
   t.left = Math.max(0, t.left - worked);
   if (t.left === 0) {
     t.status = 'done';
-    applyEffects(t.reward, `Done: ${t.title} (${EXECS[t.who].short})`);
+    fxFor([t.who, t.from], t.reward, `Done: ${t.title} (${EXECS[t.who].short})`);
     banner('trellis', '✅ Ticket done', `${EXECS[t.who].short}: ${t.title}`);
   } else {
     applyEffects(hits.length ? { stress: t.priority === 1 ? 5 : 2 } : {}, hits.length ? `${e.title} got interrupted. ${t.left}m still to go.` : `${e.title}: ${t.left}m still to go.`);
@@ -1315,11 +1352,11 @@ export function buyProduct(productId: string, to: string, pay: 'company' | 'me')
     if (task.personal && pay === 'me') applyEffects({ stress: 3 }, 'Paid for the gift yourself. Rent is due.', true);
     const budget = task.budget ?? 50;
     if (p.tier === 'cheap') {
-      applyEffects(task.personal ? { stress: 6 } : { standing: -4 }, task.personal ? `${to} got a branded mug. For their birthday.` : `${to} got a $${p.price} mug. Margo is mortified.`);
+      fxFor(taskWho(task), task.personal ? { stress: 6 } : { standing: -4 }, task.personal ? `${to} got a branded mug. For their birthday.` : `${to} got a $${p.price} mug. Margo is mortified.`);
     } else if (p.price > budget * 1.6) {
-      applyEffects(task.personal ? { stress: -15 } : { standing: -2 }, task.personal ? `${to} LOVED the gift.` : `Finance wants to know who approved a $${p.price} ${p.name.toLowerCase()}.`);
+      fxFor(taskWho(task), task.personal ? { stress: -15 } : { standing: -2 }, task.personal ? `${to} LOVED the gift.` : `Finance wants to know who approved a $${p.price} ${p.name.toLowerCase()}.`);
     } else {
-      applyEffects(task.reward, `Gift sent: ${p.name} → ${to}`);
+      fxFor(taskWho(task), task.reward, `Gift sent: ${p.name} → ${to}`);
     }
   }
   banner('bundl', '📦 Order placed', `${p.name} → ${to === 'me' ? 'you' : to}`);
@@ -1341,8 +1378,8 @@ function deliver(o: (typeof S.orders)[number]) {
     if (task) {
       const m = drinkMatch(o.item, EXECS[exec].drink);
       task.status = m === 'wrong' ? 'failed' : 'done';
-      if (m === 'perfect') applyEffects(task.reward, `${EXECS[exec].short} got their coffee. Exactly right.`);
-      else if (m === 'close') applyEffects(halve(task.reward), `${EXECS[exec].short} got a coffee that was… close. "${o.label}?"`);
+      if (m === 'perfect') fxFor([exec], task.reward, `${EXECS[exec].short} got their coffee. Exactly right.`);
+      else if (m === 'close') fxFor([exec], halve(task.reward), `${EXECS[exec].short} got a coffee that was… close. "${o.label}?"`);
       else applyEffects({ morale: -2, standing: -1 }, `${EXECS[exec].short} got the wrong coffee (${o.label}). They are holding it at arm's length.`);
     }
   }
@@ -1365,7 +1402,7 @@ export function bookTable(restId: string, time: number, party: number) {
   );
   if (task) {
     task.status = 'done';
-    applyEffects(task.reward, `Booked ${r.name} for ${party} at ${fmt(time)}.`);
+    fxFor(taskWho(task), task.reward, `Booked ${r.name} for ${party} at ${fmt(time)}.`);
     if (!task.personal && r.vibe) {
       if (r.deposit) spend(`Tably · ${r.name} deposit`, r.deposit);
       applyEffects(r.vibe, r.vibeLog ?? r.name);
@@ -1399,7 +1436,7 @@ export function endDay() {
   for (const t of S.tickets) {
     if (t.status !== 'open' || t.dueDay > S.dayIndex) continue;
     t.status = 'late';
-    applyEffects(t.late, `Late: ${t.title} (${EXECS[t.who].short})`, true);
+    fxFor([t.who, t.from], t.late, `Late: ${t.title} (${EXECS[t.who].short})`, true);
   }
   for (const e of S.events) {
     if (e.status !== 'pending') continue;
@@ -1410,18 +1447,18 @@ export function endDay() {
       continue;
     }
     e.status = 'missed';
-    applyEffects(lifeOnly(e, e.missPenalty ?? { standing: -5 }), e.dueDay !== undefined ? `Missed the deadline: ${e.title}` : `Never booked: ${e.title}`, true);
+    fxFor(eventPeople(e), lifeOnly(e, e.missPenalty ?? { standing: -5 }), e.dueDay !== undefined ? `Missed the deadline: ${e.title}` : `Never booked: ${e.title}`, true);
   }
   // Keep a read-only copy of today's calendar (the last week of them).
   S.past[S.dayIndex] = S.events.filter((e) => e.start !== null && e.status !== 'declined' && e.status !== 'bumped' && e.status !== 'pending').map((e) => ({ ...e, fresh: false }));
   for (const k of Object.keys(S.past)) if (+k < S.dayIndex - 7) delete S.past[+k];
   for (const task of S.tasks) if (task.status === 'open') {
     task.status = 'failed';
-    applyEffects(task.fail, `Failed: ${task.text}`, true);
+    fxFor(taskWho(task), task.fail, `Failed: ${task.text}`, true);
   }
   for (const m of S.messages) if (m.choices && m.chosen === undefined) {
     m.chosen = -1;
-    applyEffects(m.timeoutEffects ?? { stress: 3 }, m.timeoutLog ?? `Ignored ${m.from}.`, true);
+    fxFor([m.from], m.timeoutEffects ?? { stress: 3 }, m.timeoutLog ?? `Ignored ${m.from}.`, true);
   }
 
   const deltas = {

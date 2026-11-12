@@ -35,6 +35,8 @@ export interface CalEvent {
   ticket?: string;
   /** Ticket priority (work blocks): 1 urgent … 3 whenever. */
   priority?: number;
+  /** Who asked for it (from the request message). */
+  from?: string;
   /** Must START within this window. */
   window?: [number, number];
   /** Minutes the attendees need free right before it starts. */

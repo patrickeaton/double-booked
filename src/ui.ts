@@ -10,7 +10,7 @@ import { avatarEl } from './avatars';
 import { coffeeOf, metPeople, statusOf } from './people';
 import { PRIORITY_LABEL } from './tickets';
 import { MAX_SHORTCUTS, addShortcut, removeShortcut, runShortcut, shortcutLabel } from './shortcuts';
-import { saveCalPrefs } from './state';
+import { saveCalPrefs, relOf, relWord, relMult, PERSONAL } from './state';
 import { METER_LABEL, S, dirty, fmtEffect, fmtMoney, isGood, readSave, setRenderer } from './state';
 import type { AppId, CalEvent, ExecId, InboxApp, Meter, RideAction } from './types';
 
@@ -253,9 +253,11 @@ function renderTeam() {
       h('button', { class: 'person-row', onclick: () => { openPerson = open ? null : p.key; dirty(); } },
         face(p.key, 44),
         h('span', { class: 'person-text' }, h('b', {}, p.name), h('small', { class: 'muted' }, p.role), st && h('small', { class: 'person-status' }, st)),
+        relChip(p.key),
         h('span', { class: 'muted' }, open ? '▾' : '▸'),
       ),
       open && h('div', { class: 'person-more' },
+        h('div', { class: `rel-line r-${relClass(relOf(p.key))}` }, relLine(p.key)),
         h('p', {}, p.bio),
         coffeeOf(p) && h('div', { class: 'small' }, '☕ ', coffeeOf(p)),
         ...p.facts.map((x) => h('div', { class: 'small' }, '• ', x)),
@@ -263,9 +265,27 @@ function renderTeam() {
     );
   };
   return [
+    h('p', { class: 'muted small rel-tip' }, 'Every call you make lands on someone. Warm people forgive more; frosty ones remember everything.'),
     h('h4', {}, 'Work'), ...work.map(row),
     life.length > 0 && h('h4', {}, 'Your people'), ...life.map(row),
   ];
+}
+
+const relClass = (v: number) => (v >= 65 ? 'warm' : v >= 45 ? 'fine' : v >= 30 ? 'cool' : 'frosty');
+const REL_EMOJI: Record<string, string> = { warm: '😊', fine: '🙂', cool: '😐', frosty: '🥶' };
+function relChip(key: string) {
+  const v = relOf(key);
+  const c = relClass(v);
+  return h('span', { class: `rel-chip r-${c}` },
+    h('span', { class: 'rel-word' }, `${REL_EMOJI[c]} ${relWord(v)}`),
+    h('span', { class: 'rel-bar' }, h('span', { style: `width:${v}%` })));
+}
+function relLine(key: string) {
+  const m = relMult(key);
+  const life = PERSONAL.includes(key);
+  if (m < 1) return life ? 'On your side: your slip-ups stress you out less with them.' : 'Has your back: setbacks with them cost less standing.';
+  if (m > 1) return life ? 'Hurt: every letdown with them hits harder.' : 'Keeping score: setbacks with them cost more standing.';
+  return 'Neutral. Every decision moves this, one way or the other.';
 }
 
 function renderPulse() {
@@ -353,7 +373,7 @@ function renderDock(isSplit: boolean) {
   const extra = all.filter((a) => !CORE_APPS.includes(a.id));
   const icon = (a: (typeof APPS)[number], close = false) => {
     const n = badgeFor(a.id);
-    return h('button', { class: `dock-app ${S.app === a.id ? 'active' : ''}`, onclick: () => { if (close) moreOpen = false; if (layout === 'cal') layout = 'split'; openApp(a.id); } },
+    return h('button', { class: `dock-app ${S.app === a.id ? 'active' : ''}`, onclick: () => { if (close) moreOpen = false; if (a.id !== 'calendar') { drawerOpen = false; detailOpen = false; S.selected = null; } if (layout === 'cal') layout = 'split'; openApp(a.id); } },
       h('span', { class: 'app-icon', style: `background:${a.color}` }, a.icon,
         n > 0 ? h('span', { class: 'badge' }, n) : isNewApp(a.id) ? h('span', { class: 'badge new' }, 'NEW') : null),
       h('span', { class: 'app-name' }, a.name),

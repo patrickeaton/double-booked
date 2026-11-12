@@ -738,3 +738,15 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
   .daynav-btn { width: 26px; }
   .cal-head-right { gap: 6px; }
 }
+
+/* Standing with each person */
+.rel-tip { margin: 0 0 6px; }
+.rel-chip { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: none; min-width: 74px; }
+.rel-word { font-size: 11px; font-weight: 800; white-space: nowrap; }
+.rel-bar { width: 64px; height: 4px; border-radius: 99px; background: #eee9de; overflow: hidden; }
+.rel-bar span { display: block; height: 100%; border-radius: 99px; background: var(--rc); }
+.r-warm { --rc: #1fa463; } .r-warm .rel-word { color: #15803d; }
+.r-fine { --rc: #3d8bff; } .r-fine .rel-word { color: #1d4ed8; }
+.r-cool { --rc: #f5a524; } .r-cool .rel-word { color: #a16207; }
+.r-frosty { --rc: #e5484d; } .r-frosty .rel-word { color: #b42318; }
+.rel-line { font-size: 12px; font-weight: 700; padding: 6px 9px; border-radius: 10px; background: color-mix(in srgb, var(--rc) 12%, white); margin-bottom: 4px; }

@@ -1,4 +1,5 @@
 import type { Ticket } from './tickets';
+import { personKey } from './avatars';
 import type { AppId, CalEvent, CallState, Effects, ExecId, LogEntry, Message, Meter, Order, Script, Shortcut, Task } from './types';
 
 export type Phase = 'title' | 'memo' | 'prep' | 'day' | 'review' | 'over' | 'end';
@@ -32,6 +33,8 @@ export interface GameState {
   carry: CalEvent[];
   /** Trellis tickets (they last across days). */
   tickets: Ticket[];
+  /** Your standing with each person (0–100, starts at 50). */
+  rel: Record<string, number>;
   /** Meetings you've booked on later days (by absolute day index). */
   future: Record<number, CalEvent[]>;
   /** What earlier days' calendars ended up looking like (read-only). */
@@ -87,6 +90,7 @@ export const S: GameState = {
   future: {},
   past: {},
   tickets: [],
+  rel: {},
   messages: [],
   call: null,
   tasks: [],
@@ -148,8 +152,65 @@ export function fmtEffect(m: Meter, v: number): string {
 /** Stress going UP is bad; everything else going down is bad. */
 export const isGood = (m: Meter, v: number) => (m === 'stress' ? v < 0 : v > 0);
 
+// ───────────── people: who a decision is about ─────────────
+/** People you have a standing with. Jules, Mum and Ollie are personal: what counts with them is how it lands, not work. */
+export const REL_PEOPLE = ['margo', 'theo', 'dana', 'bev', 'wren', 'sam', 'priya', 'ana', 'dev', 'kai', 'kendall', 'gerald', 'tobias', 'jules', 'mum', 'ollie'];
+export const PERSONAL = ['jules', 'mum', 'ollie'];
+const NAMES: Record<string, string> = { margo: 'Margo', theo: 'Theo', dana: 'Dana', bev: 'Bev', wren: 'Wren', sam: 'Sam', priya: 'Priya', ana: 'Ana', dev: 'Dev', kai: 'Kai', kendall: 'Kendall', gerald: 'Gerald', tobias: 'Tobias', jules: 'Jules', mum: 'Mum', ollie: 'Ollie' };
+export const relName = (k: string) => NAMES[k] ?? k;
+export const relOf = (k: string) => S.rel[k] ?? 50;
+export const relWord = (v: number) => (v >= 80 ? 'Big fan' : v >= 65 ? 'Warm' : v >= 45 ? 'Fine' : v >= 30 ? 'Cool' : 'Frosty');
+/** Warm people soften setbacks; frosty ones sharpen them. */
+export const relMult = (k: string) => (relOf(k) >= 65 ? 0.7 : relOf(k) < 30 ? 1.5 : 1);
+
+let who: string[] = [];
+/** How much this kind of thing moves someone's opinion of you: direct decisions count most, routine meetings least. */
+let weight = 1;
+/** Names, exec ids or message senders ("Priya (Sales)", "Jules ❤️") → the people we track. */
+export function peopleIn(xs: (string | undefined | null)[]): string[] {
+  const out = new Set<string>();
+  for (const x of xs) {
+    if (!x) continue;
+    const k = personKey(x);
+    if (REL_PEOPLE.includes(k)) out.add(k);
+  }
+  return [...out];
+}
+/** Run `fn` with its effects attributed to these people. */
+export function about<T>(people: (string | undefined | null)[], fn: () => T, w = 1): T {
+  const prev = who;
+  const prevW = weight;
+  who = peopleIn(people);
+  weight = w;
+  try {
+    return fn();
+  } finally {
+    who = prev;
+    weight = prevW;
+  }
+}
+/** Shorthand: apply effects on behalf of some people. */
+export const fxFor = (people: (string | undefined | null)[], eff: Effects | undefined, text: string, quiet = false) => about(people, () => applyEffects(eff, text, quiet));
+
 export function applyEffects(eff: Effects | undefined, text: string, quiet = false) {
   if (!eff) return;
+  if (who.length) {
+    // How you stand with them changes how much it hurts.
+    const work = who.filter((k) => !PERSONAL.includes(k));
+    const life = who.filter((k) => PERSONAL.includes(k));
+    const avg = (ks: string[]) => ks.reduce((a, k) => a + relMult(k), 0) / ks.length;
+    eff = { ...eff };
+    if (work.length && (eff.standing ?? 0) < 0) eff.standing = Math.round(eff.standing! * avg(work));
+    if (life.length && (eff.stress ?? 0) > 0) eff.stress = Math.round(eff.stress! * avg(life));
+    for (const k of who) {
+      const personal = PERSONAL.includes(k);
+      const raw = personal ? (eff.morale ?? 0) / 2 - (eff.stress ?? 0) / 2 : (eff.standing ?? 0) + (eff.morale ?? 0) / 2;
+      const d = Math.round(raw * weight);
+      if (!d) continue;
+      S.rel[k] = Math.max(0, Math.min(100, relOf(k) + d));
+      if (!quiet) S.toasts.push({ id: uid(), text: `${relName(k)} ${d > 0 ? '+' : ''}${d}`, good: d > 0, born: performance.now() });
+    }
+  }
   for (const [k, v] of Object.entries(eff) as [Meter, number][]) {
     if (!v) continue;
     S.meters[k] += v;
@@ -193,11 +254,11 @@ export function saveCalPrefs() {
 
 // ───────────── save / load ─────────────
 const KEY = 'double-booked-save-v1';
-export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[]; shortcuts?: Shortcut[]; seed?: number; endless?: boolean; savedDrinks?: string[]; messages?: Message[]; kendall?: { helped: number; sabotaged: number }; future?: Record<number, CalEvent[]>; past?: Record<number, CalEvent[]>; tickets?: Ticket[] }
+export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[]; shortcuts?: Shortcut[]; seed?: number; endless?: boolean; savedDrinks?: string[]; messages?: Message[]; kendall?: { helped: number; sabotaged: number }; future?: Record<number, CalEvent[]>; past?: Record<number, CalEvent[]>; tickets?: Ticket[]; rel?: Record<string, number> }
 
 export function writeSave() {
   try {
-    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming, shortcuts: S.shortcuts, seed: S.seed, endless: S.endless, savedDrinks: S.savedDrinks, messages: S.messages, kendall: S.kendall, future: S.future, past: S.past, tickets: S.tickets };
+    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming, shortcuts: S.shortcuts, seed: S.seed, endless: S.endless, savedDrinks: S.savedDrinks, messages: S.messages, kendall: S.kendall, future: S.future, past: S.past, tickets: S.tickets, rel: S.rel };
     localStorage.setItem(KEY, JSON.stringify(s));
   } catch {
     /* storage may be unavailable */
