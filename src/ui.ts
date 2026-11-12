@@ -4,7 +4,7 @@ import { CAL_END, CAL_START, DAY_END, DAY_START, EXECS, isBoss, PAYROLL, PRODUCT
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
   minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
-  toggleSpeed, unschedule, scheduleTicket, ticketBlock, toggleAttendee, canEditAttendees, skippedFrom, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
+  toggleSpeed, unschedule, padBefore, padAfter, canBuffer, setBuffer, scheduleTicket, ticketBlock, toggleAttendee, canEditAttendees, skippedFrom, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
 } from './engine';
 import { avatarEl } from './avatars';
 import { coffeeOf, metPeople, statusOf } from './people';
@@ -452,9 +452,8 @@ function renderCalendar() {
           h('div', { class: 'drawer-head' }, h('b', {}, sel.status === 'pending' ? 'Book it' : 'Details'),
             h('button', { class: 'win-btn', onclick: () => select(null) }, '✕')),
           h('div', { class: 'drawer-cards', 'data-keep': 'detail' },
-            ahead ? renderAheadSelection(sel, ahead.day) : renderDetails(sel),
-            (sel.status === 'pending' || (sel.status === 'scheduled' && !sel.fixed)) &&
-              h('button', { class: 'btn big pick-time', onclick: () => { detailOpen = false; dirty(); } }, '👆 Pick a time on the calendar'))))
+            ahead ? renderAheadSelection(sel, ahead.day) : renderDetails(sel)),
+          !ahead && (() => { const a = detailActions(sel); return a && h('div', { class: 'drawer-foot' }, a); })()))
     : null;
   const drawer = !split.matches && drawerOpen
     ? h('div', { class: 'drawer-wrap' },
@@ -497,14 +496,15 @@ function renderCalendar() {
     const lanes = layoutLanes(shown.filter((e) => e.kind !== 'focus'));
     for (const e of shown) {
       const pieces = [today ? renderBlock(e) : renderOtherBlock(e)];
-      const tr = travelOf(e);
-      if (tr && e.status !== 'missed') {
-        pieces.push(h('div', { class: 'travel', style: `top:${(e.start! - tr - CAL_START) * PX}px;height:${tr * PX}px;--c:${EXECS[e.attendees[0]].color}` }, '🚗'));
-        pieces.push(h('div', { class: 'travel', style: `top:${(e.start! + e.duration - CAL_START) * PX}px;height:${tr * PX}px;--c:${EXECS[e.attendees[0]].color}` }, '🚗'));
+      const pb = padBefore(e), pa = padAfter(e);
+      if (e.status !== 'missed' && e.status !== 'pending') {
+        const c = EXECS[e.attendees[0]].color;
+        if (pb) { pieces[0].classList.add('has-pad-before'); pieces.push(h('div', { class: `travel pad-before ${travelOf(e) >= pb ? '' : 'buffer'}`, style: `top:${(e.start! - pb - CAL_START) * PX}px;height:${pb * PX}px;--c:${c}` })); }
+        if (pa) { pieces[0].classList.add('has-pad-after'); pieces.push(h('div', { class: `travel pad-after ${travelOf(e) >= pa ? '' : 'buffer'}`, style: `top:${(e.start! + e.duration - CAL_START) * PX}px;height:${pa * PX}px;--c:${c}` })); }
       }
       const l = lanes.get(e);
       for (const el of pieces) {
-        if (l && l.of > 1) {
+        if (l && l.of > 1 && !el.classList.contains('travel')) {
           el.style.left = `calc(${(l.lane / l.of) * 100}% + 2px)`;
           el.style.right = 'auto';
           el.style.width = `calc(${100 / l.of}% - 4px)`;
@@ -570,7 +570,7 @@ function renderCard(e: CalEvent) {
 /** Side-by-side lanes for overlapping events, so clashes are visible instead of stacked. */
 function layoutLanes(evts: CalEvent[]) {
   const out = new Map<CalEvent, { lane: number; of: number }>();
-  const sorted = [...evts].sort((a, b) => a.start! - travelOf(a) - (b.start! - travelOf(b)) || b.duration - a.duration);
+  const sorted = [...evts].sort((a, b) => a.start! - b.start! || b.duration - a.duration);
   let cluster: CalEvent[] = [];
   let laneEnds: number[] = [];
   let clusterEnd = -1;
@@ -580,8 +580,8 @@ function layoutLanes(evts: CalEvent[]) {
     laneEnds = [];
   };
   for (const e of sorted) {
-    const s0 = e.start! - travelOf(e);
-    const s1 = e.start! + e.duration + travelOf(e);
+    const s0 = e.start!;
+    const s1 = e.start! + e.duration;
     if (s0 >= clusterEnd) flush();
     let lane = laneEnds.findIndex((end) => end <= s0);
     if (lane === -1) {
@@ -657,8 +657,6 @@ function renderDetails(e: CalEvent) {
   const issues = issuesFor(e);
   const canAct = e.status === 'pending' || (e.status === 'scheduled' && !e.fixed);
   const ok = e.minOk ?? e.baseDuration ?? e.duration;
-  const bumpFx = canBump(e) ? bumpPenaltyFor(e) : null;
-  const bumpCost = bumpFx && Object.entries(bumpFx).filter(([, v]) => v).map(([m, v]) => `${METER_ICON[m as Meter]}${m === 'runway' ? fmtMoney(v as number) : v}`).join(' ');
   const skipped = skippedFrom(e);
   const row = (label: string, ...kids: Child[]) => h('div', { class: 'd-row' }, h('span', { class: 'd-lbl' }, label), h('div', { class: 'd-ctl' }, ...kids));
   const status = e.status === 'pending' ? 'Not booked' : e.status === 'running' ? 'Happening now' : e.status === 'scheduled' ? (e.fixed ? 'Fixed' : 'Booked') : e.status[0].toUpperCase() + e.status.slice(1);
@@ -684,6 +682,18 @@ function renderDetails(e: CalEvent) {
         h('button', { class: 'd-step', onclick: () => resizeEvent(e.id, 15) }, '+15'),
         h('span', { class: 'd-hint' }, e.duration < ok ? 'Cut short: partial credit' : ok < (e.baseDuration ?? e.duration) ? `Fine down to ${ok}m` : '')),
       canWrap(e) && row('Running', h('span', { class: 'd-hint' }, `Since ${fmt(e.start!)} · ${S.now - e.start!} of ${e.planned ?? e.duration}m`)),
+      canBuffer(e) && row('Buffer',
+        h('div', { class: 'buf' },
+          h('span', { class: 'buf-lbl' }, 'Before'),
+          h('button', { class: 'd-step', disabled: padBefore(e) <= travelOf(e), onclick: () => setBuffer(e.id, 'before', -15) }, '−'),
+          h('b', { class: 'buf-val' }, padBefore(e) ? `${padBefore(e)}m` : '—'),
+          h('button', { class: 'd-step', disabled: padBefore(e) >= 120, onclick: () => setBuffer(e.id, 'before', 15) }, '+')),
+        h('div', { class: 'buf' },
+          h('span', { class: 'buf-lbl' }, 'After'),
+          h('button', { class: 'd-step', disabled: padAfter(e) <= travelOf(e), onclick: () => setBuffer(e.id, 'after', -15) }, '−'),
+          h('b', { class: 'buf-val' }, padAfter(e) ? `${padAfter(e)}m` : '—'),
+          h('button', { class: 'd-step', disabled: padAfter(e) >= 120, onclick: () => setBuffer(e.id, 'after', 15) }, '+')),
+        h('span', { class: 'd-hint' }, travelOf(e) ? `Includes ${travelOf(e)}m travel each way.` : 'Prep time before, slack for overruns after.')),
       row('Who', canEditAttendees(e) ? attendeeChips(e) : h('div', { class: 'who-chips' }, ...e.attendees.map((x) => h('span', { class: 'who-chip on fixed' }, x === 'team' ? '🌱' : face(x, 20), EXECS[x].short)))),
       skipped.length > 0 && h('div', { class: 'd-warn' }, `Skipping costs ${e.fixed || e.attendees.includes('team') ? '🤝 morale' : '⭐ standing'} when it starts (−2 each).`),
       canAddons(e) && row('Extras',
@@ -696,12 +706,21 @@ function renderDetails(e: CalEvent) {
           e.remoteOk && h('button', { class: `chip ${e.remote ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'remote') },
             e.remote ? '💻 Remote' : `🚗 In person · ${e.travel}m each way`, e.remote && e.remoteOk === 'meh' ? h('small', {}, ' · less impact') : null))),
     ),
-    (canAct || canWrap(e)) && h('div', { class: 'd-actions' },
-      canWrap(e) && h('button', { class: 'd-act danger', onclick: () => wrapUpNow(e.id) }, '✂️ Wrap up now'),
-      e.status === 'scheduled' && !e.fixed && h('button', { class: 'd-act', onclick: () => unschedule(e.id) }, '↩︎ Unbook'),
-      bumpFx && h('button', { class: 'd-act', onclick: () => bumpEvent(e.id) }, '📆 Tomorrow', h('small', {}, bumpCost || 'free')),
-      canAct && h('button', { class: 'd-act danger', onclick: () => declineEvent(e.id) }, 'Decline'),
-    ),
+  );
+}
+
+/** The sidecar's footer: what you can do with this meeting. */
+function detailActions(e: CalEvent) {
+  const canAct = e.status === 'pending' || (e.status === 'scheduled' && !e.fixed);
+  const bumpFx = canBump(e) ? bumpPenaltyFor(e) : null;
+  const bumpCost = bumpFx && Object.entries(bumpFx).filter(([, v]) => v).map(([m, v]) => `${METER_ICON[m as Meter]}${m === 'runway' ? fmtMoney(v as number) : v}`).join(' ');
+  if (!canAct && !canWrap(e)) return null;
+  return h('div', { class: 'd-actions' },
+    canWrap(e) && h('button', { class: 'd-act danger', onclick: () => wrapUpNow(e.id) }, '✂️ Wrap up now'),
+    canAct && h('button', { class: 'd-act pick', onclick: () => { detailOpen = false; dirty(); } }, e.status === 'pending' ? '👆 Pick a time' : '👆 Move'),
+    e.status === 'scheduled' && !e.fixed && h('button', { class: 'd-act', onclick: () => unschedule(e.id) }, '↩︎ Unbook'),
+    bumpFx && h('button', { class: 'd-act', onclick: () => bumpEvent(e.id) }, '📆 Tomorrow', h('small', {}, bumpCost || 'free')),
+    canAct && h('button', { class: 'd-act danger', onclick: () => declineEvent(e.id) }, 'Decline'),
   );
 }
 
@@ -739,6 +758,14 @@ function renderSelection(e: CalEvent) {
       h('span', { class: 'small muted' }, `Running since ${fmt(e.start!)} · ${S.now - e.start!} of ${e.planned ?? e.duration}m${(e.planned ?? 0) < ok ? '' : ''}`),
     ),
     canEditAttendees(e) && h('div', { class: 'stepper' }, h('span', { class: 'small muted lbl' }, 'Who'), attendeeChips(e)),
+    canBuffer(e) && h('div', { class: 'stepper' },
+      h('span', { class: 'small muted lbl' }, 'Buffer'),
+      h('button', { class: 'btn', disabled: padBefore(e) <= travelOf(e), onclick: () => setBuffer(e.id, 'before', -15) }, '−'),
+      h('b', { class: 'len' }, `${padBefore(e)}m before`),
+      h('button', { class: 'btn', disabled: padBefore(e) >= 120, onclick: () => setBuffer(e.id, 'before', 15) }, '+'),
+      h('button', { class: 'btn', disabled: padAfter(e) <= travelOf(e), onclick: () => setBuffer(e.id, 'after', -15) }, '−'),
+      h('b', { class: 'len' }, `${padAfter(e)}m after`),
+      h('button', { class: 'btn', disabled: padAfter(e) >= 120, onclick: () => setBuffer(e.id, 'after', 15) }, '+')),
     canAddons(e) && h('div', { class: 'addons' },
       h('button', { class: `chip ${e.withCoffee ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'coffee') },
         `☕ Coffee $${addonCost(e).coffee}`,

@@ -77,6 +77,20 @@ const blocks = (e: CalEvent) => e.kind !== 'focus' && e.kind !== 'work';
 /** Meeting rules only apply to meetings. */
 const ruled = (e: CalEvent) => !e.fixed && e.kind !== 'work';
 export const travelOf = (e: CalEvent) => (e.travel && !e.remote ? e.travel : 0);
+/** Buffers: protected time either side. Travel fills them automatically; you can make them bigger. */
+export const padBefore = (e: CalEvent) => Math.max(travelOf(e), e.bufferBefore ?? 0);
+export const padAfter = (e: CalEvent) => Math.max(travelOf(e), e.bufferAfter ?? 0);
+const padStart = (e: CalEvent) => (e.start ?? 0) - padBefore(e);
+const padEnd = (e: CalEvent) => end(e) + padAfter(e);
+export const canBuffer = (e: CalEvent) => e.kind !== 'focus' && e.kind !== 'work' && (e.status === 'pending' || e.status === 'scheduled') && !e.departed;
+export function setBuffer(id: string, side: 'before' | 'after', delta: number) {
+  const e = findEvent(id);
+  if (!e || !canBuffer(e)) return;
+  const key = side === 'before' ? 'bufferBefore' : 'bufferAfter';
+  const cur = side === 'before' ? padBefore(e) : padAfter(e);
+  e[key] = Math.max(travelOf(e), Math.min(120, cur + delta));
+  dirty();
+}
 const occStart = (e: CalEvent) => (e.start ?? 0) - travelOf(e);
 const occEnd = (e: CalEvent) => end(e) + travelOf(e);
 export const COFFEE_ADDON = 6; // per attendee
@@ -845,6 +859,10 @@ export function issuesFor(e: CalEvent): Issue[] {
     if (clash) {
       const tight = !overlaps(s, end(e), clash.start!, end(clash));
       out.push({ icon: tight ? '🚗' : '⛔', text: tight ? `No travel time around ${clash.title}` : `Clashes with ${clash.title}`, bad: true });
+    } else {
+      // Not a hard clash, but it eats into a buffer (its own, or the other meeting's).
+      const inBuf = S.events.find((o) => o !== e && active(o) && blocks(o) && shares(o, e) && o.start !== null && overlaps(padStart(e), padEnd(e), padStart(o), padEnd(o)));
+      if (inBuf) out.push({ icon: '🧘', text: overlaps(padStart(e), padEnd(e), inBuf.start!, end(inBuf)) ? `${inBuf.title} is in its buffer` : `In ${inBuf.title}'s buffer`, bad: true });
     }
   }
   for (const id of day().rules) if (ruled(e) && RULES[id].check(e)) out.push({ icon: '⚠️', text: RULES[id].short, bad: true });

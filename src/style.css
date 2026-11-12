@@ -673,3 +673,21 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 /* work blocks on the calendar */
 .evt.k-work { background: color-mix(in srgb, var(--c) 10%, white); border: 1.5px dashed color-mix(in srgb, var(--c) 70%, white); box-shadow: none; }
 .evt.k-work .evt-title { color: color-mix(in srgb, var(--c) 55%, #1d2033); }
+
+/* Buffers: manual ones are a softer hatch than travel */
+.travel.buffer { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--c) 9%, transparent) 0 6px, transparent 6px 12px); border-style: dotted; }
+.buf { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; }
+.buf-lbl { font-size: 11px; font-weight: 700; color: var(--muted); width: 40px; }
+.buf-val { min-width: 34px; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; }
+.travel { z-index: 0; }
+
+/* Details sidecar: actions live in a footer pinned to the bottom */
+.drawer-foot { flex: none; border-top: 1px solid var(--line); padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: var(--card); border-radius: 0 0 0 18px; }
+.drawer-foot .d-actions { grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); }
+.d-act.pick { background: var(--ink); color: #fff; }
+
+/* Buffers join the meeting: one block, rounded only at its outer ends */
+.travel.pad-before { border-radius: 8px 8px 0 0; border-bottom: 0; }
+.travel.pad-after { border-radius: 0 0 8px 8px; border-top: 0; }
+.evt.has-pad-before { border-top-left-radius: 0; border-top-right-radius: 0; }
+.evt.has-pad-after { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
