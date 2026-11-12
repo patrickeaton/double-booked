@@ -15,7 +15,7 @@ export interface Exec {
   quirks: string[];
 }
 
-export type EventStatus = 'pending' | 'scheduled' | 'running' | 'done' | 'missed' | 'declined';
+export type EventStatus = 'pending' | 'scheduled' | 'running' | 'done' | 'missed' | 'declined' | 'bumped';
 
 export interface CalEvent {
   id: string;
@@ -38,6 +38,17 @@ export interface CalEvent {
   /** On start, the meeting quietly grows by this many minutes. */
   overrun?: number;
   overranBy?: number;
+  /** Length as originally requested. */
+  baseDuration?: number;
+  /** Shortest booking that still gets the job done (defaults to the full length). */
+  minOk?: number;
+  /** Length that was actually booked when it started (before it ran long/short). */
+  planned?: number;
+  /** Cost of pushing it to tomorrow. Defaults to half the decline penalty. */
+  bumpPenalty?: Effects;
+  noBump?: boolean;
+  /** How many times it has already been pushed. */
+  bumps?: number;
   /** For requests arriving mid-day: must be scheduled to START before this. */
   deadline?: number;
   reward?: Effects;

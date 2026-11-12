@@ -1,7 +1,7 @@
 import { CAL_END, CAL_START, DAYS, DAY_END, DRINKS, EXECS, PAYROLL, PRODUCTS, RULES, fmt } from './data';
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
-  minStart, newGame, nextDay, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
+  minStart, newGame, nextDay, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
   toggleSpeed, unschedule,
 } from './engine';
 import { METER_LABEL, S, dirty, fmtEffect, fmtMoney, isGood, readSave, setRenderer } from './state';
@@ -325,21 +325,36 @@ function renderBlock(e: CalEvent) {
 function renderSelection(e: CalEvent) {
   const issues = issuesFor(e);
   const canAct = e.status === 'pending' || (e.status === 'scheduled' && !e.fixed);
+  const ok = e.minOk ?? e.baseDuration ?? e.duration;
+  const bumpFx = canBump(e) ? bumpPenaltyFor(e) : null;
+  const bumpCost = bumpFx && Object.entries(bumpFx).filter(([, v]) => v).map(([m, v]) => `${METER_ICON[m as Meter]}${m === 'runway' ? fmtMoney(v as number) : v}`).join(' ');
   return h('div', { class: 'selbar' },
     h('div', { class: 'selbar-top' },
       h('b', {}, e.title),
       h('span', { class: 'muted small nowrap' },
-        `${e.attendees.map((a) => EXECS[a].short).join(' & ')} · ${e.duration}m`,
+        e.attendees.map((a) => EXECS[a].short).join(' & '),
         e.start !== null ? ` · ${fmt(e.start)}` : '',
         e.status !== 'scheduled' && e.status !== 'pending' ? ` · ${e.status}` : ''),
     ),
     e.note && h('div', { class: 'small note' }, e.note),
     issues.length > 0 && h('div', { class: 'req-tags' }, ...issues.map((i) => h('span', { class: `tag ${i.bad ? 'bad' : ''}` }, `${i.icon} ${i.text}`))),
+    canResize(e) && h('div', { class: 'stepper' },
+      h('span', { class: 'small muted' }, 'Length'),
+      h('button', { class: 'btn', onclick: () => resizeEvent(e.id, -15), disabled: e.duration <= 15 }, '−15'),
+      h('b', { class: `len ${e.duration < ok ? 'short' : ''}` }, `${e.duration}m`),
+      h('button', { class: 'btn', onclick: () => resizeEvent(e.id, 15) }, '+15'),
+      h('span', { class: 'small muted' }, e.duration < ok ? `cut short: partial credit` : ok < (e.baseDuration ?? e.duration) ? `fine down to ${ok}m` : ''),
+    ),
+    canWrap(e) && h('div', { class: 'stepper' },
+      h('span', { class: 'small muted' }, `Running since ${fmt(e.start!)} · ${S.now - e.start!} of ${e.planned ?? e.duration}m${(e.planned ?? 0) < ok ? '' : ''}`),
+    ),
     h('div', { class: 'selbar-actions' },
-      canAct ? h('span', { class: 'small hint-strong' }, '👇 Tap a time') : h('span', {}),
+      e.status === 'pending' ? h('span', { class: 'small hint-strong' }, '👇 Tap a time') : h('span', { class: 'spacer' }),
+      canWrap(e) && h('button', { class: 'btn danger', onclick: () => wrapUpNow(e.id) }, '✂️ Wrap up now'),
       e.status === 'scheduled' && !e.fixed && h('button', { class: 'btn', onclick: () => unschedule(e.id) }, 'Unbook'),
+      bumpFx && h('button', { class: 'btn', onclick: () => bumpEvent(e.id), title: 'Push to tomorrow' }, '📆 Tmrw', h('small', { class: 'cost' }, bumpCost || 'free')),
       canAct && h('button', { class: 'btn danger', onclick: () => declineEvent(e.id) }, 'Decline'),
-      h('button', { class: 'btn', onclick: () => select(null) }, 'Cancel'),
+      h('button', { class: 'btn icon', onclick: () => select(null), 'aria-label': 'Cancel' }, '✕'),
     ),
   );
 }

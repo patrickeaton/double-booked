@@ -127,7 +127,7 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .tray-head .count { background: var(--ink); color: #fff; border-radius: 99px; font-size: 11px; padding: 0 7px; }
 .tray-head .hint { font-weight: 500; font-size: 11px; margin-left: auto; text-align: right; }
 .tray-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; align-items: start; }
-.req { background: var(--card); border-radius: 10px; padding: 7px 8px; border-left: 4px solid var(--c); touch-action: none; cursor: grab; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); display: flex; flex-direction: column; gap: 4px; }
+.req { background: var(--card); border-radius: 10px; padding: 7px 8px;  touch-action: none; cursor: grab; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); display: flex; flex-direction: column; gap: 4px; }
 .req.selected { outline: 3px solid var(--ink); }
 .req.fresh { animation: wiggle 0.6s 2; }
 .req-top { display: flex; justify-content: space-between; gap: 6px; font-size: 12.5px; line-height: 1.2; }
@@ -146,7 +146,15 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .selbar .tag { background: rgba(255, 255, 255, 0.12); color: #fff; }
 .selbar .tag.bad { background: var(--bad); }
 .hint-strong { color: #ffd166; font-weight: 700; margin-right: auto; }
-.selbar-actions { display: flex; align-items: center; gap: 6px; }
+.selbar-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.selbar-actions .spacer, .selbar-actions .hint-strong { margin-right: auto; }
+.stepper { display: flex; align-items: center; gap: 8px; }
+.stepper .btn { padding: 5px 10px; font-size: 13px; background: rgba(255, 255, 255, 0.16); color: #fff; }
+.stepper .len { min-width: 42px; text-align: center; font-size: 15px; }
+.stepper .len.short { color: #ffd166; }
+.selbar-actions .btn .cost { font-size: 11px; opacity: 0.85; margin-left: 4px; font-weight: 600; }
+.selbar-actions .btn.icon { padding: 6px 10px; }
+.selbar-actions .btn { padding: 6px 10px; }
 .selbar-actions .btn { padding: 6px 12px; font-size: 13px; background: rgba(255, 255, 255, 0.16); color: #fff; }
 .selbar-actions .btn.danger { background: rgba(229, 72, 77, 0.95); }
 .nowrap { white-space: nowrap; }
@@ -174,7 +182,7 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 
 .evt {
   position: absolute; left: 3px; right: 3px; border-radius: 8px; padding: 3px 6px; overflow: hidden;
-  background: color-mix(in srgb, var(--c) 18%, white); border-left: 4px solid var(--c);
+  background: color-mix(in srgb, var(--c) 18%, white); 
   font-size: 11.5px; line-height: 1.2; z-index: 2; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 .evt.movable { touch-action: none; cursor: grab; }
@@ -183,17 +191,17 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .evt-time { color: #555a70; font-size: 10.5px; }
 .evt-issues { font-size: 11px; margin-top: 1px; }
 .evt.multi { background: linear-gradient(135deg, color-mix(in srgb, #ff7a59 16%, white), color-mix(in srgb, #4f7cff 16%, white)); }
-.evt.k-focus { background: repeating-linear-gradient(135deg, #e7edff 0 8px, #dbe4ff 8px 16px); border-left-color: #4f7cff; z-index: 1; color: #3651b3; }
-.evt.k-personal { border-left-style: dashed; }
+.evt.k-focus { background: repeating-linear-gradient(135deg, #e7edff 0 8px, #dbe4ff 8px 16px); z-index: 1; color: #3651b3; }
+.evt.k-personal::before { background: repeating-linear-gradient(to bottom, var(--c) 0 6px, transparent 6px 10px); }
 .evt.has-issue { box-shadow: 0 0 0 2px var(--bad); }
 .evt.selected { box-shadow: 0 0 0 3px var(--ink); z-index: 4; }
 .evt.st-running { box-shadow: 0 0 0 2px var(--c); animation: running 1.6s infinite; }
 .evt.st-done { opacity: 0.55; }
-.evt.st-missed { background: repeating-linear-gradient(135deg, #ffe3e3 0 6px, #ffd0d0 6px 12px); border-left-color: var(--bad); opacity: 0.8; }
+.evt.st-missed { background: repeating-linear-gradient(135deg, #ffe3e3 0 6px, #ffd0d0 6px 12px); opacity: 0.8; }
 .evt.fresh { animation: wiggle 0.6s 3; }
 @keyframes running { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 40%, transparent); } }
 
-.ghost { position: fixed; left: 0; top: 0; z-index: 1000; pointer-events: none; border-radius: 8px; background: color-mix(in srgb, var(--c) 30%, white); border-left: 4px solid var(--c); padding: 4px 7px; font-size: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25); display: flex; flex-direction: column; opacity: 0.95; }
+.ghost { position: fixed; left: 0; top: 0; z-index: 1000; pointer-events: none; border-radius: 8px; background: color-mix(in srgb, var(--c) 30%, white);  padding: 4px 7px; font-size: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25); display: flex; flex-direction: column; opacity: 0.95; }
 .ghost-time { font-weight: 800; color: var(--ink); }
 body.dragging, body.dragging * { cursor: grabbing !important; }
 
@@ -240,7 +248,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .task.done span:last-child { text-decoration: line-through; color: var(--muted); }
 .task.failed span:last-child { color: var(--bad); }
 .rule { background: #fff6d6; border-radius: 10px; padding: 8px 10px; font-size: 13px; margin-bottom: 6px; }
-.dossier { border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 12px; padding: 10px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 4px; }
+.dossier { border: 1px solid var(--line);  border-radius: 12px; padding: 10px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 4px; }
 .dossier-head { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
 
 /* ───────── banners + toasts ───────── */
@@ -321,3 +329,11 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
   .app-head { padding: 10px 12px 6px; }
   .cal .app-head h2 { font-size: 18px; }
 }
+
+/* ───────── colour stripes: a clipped bar instead of a border, so rounded corners stay clean ───────── */
+.evt, .req, .ghost, .dossier { overflow: hidden; padding-left: 10px; }
+.req, .dossier { position: relative; }
+.evt::before, .req::before, .ghost::before, .dossier::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c);
+}
+.evt.st-missed::before { background: var(--bad); }

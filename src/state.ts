@@ -24,6 +24,10 @@ export interface GameState {
   strikeNotes: string[];
   flags: string[];
   events: CalEvent[];
+  /** Meetings pushed from yesterday, landing in today's tray. */
+  incoming: CalEvent[];
+  /** Meetings pushed today, landing tomorrow. */
+  carry: CalEvent[];
   messages: Message[];
   call: CallState | null;
   tasks: Task[];
@@ -56,6 +60,8 @@ export const S: GameState = {
   strikeNotes: [],
   flags: [],
   events: [],
+  incoming: [],
+  carry: [],
   messages: [],
   call: null,
   tasks: [],
@@ -136,11 +142,11 @@ export function addStrike(note: string) {
 
 // ───────────── save / load ─────────────
 const KEY = 'double-booked-save-v1';
-export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[] }
+export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[] }
 
 export function writeSave() {
   try {
-    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags] };
+    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming };
     localStorage.setItem(KEY, JSON.stringify(s));
   } catch {
     /* storage may be unavailable */

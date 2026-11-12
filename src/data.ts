@@ -112,30 +112,30 @@ export const DAYS: DayDef[] = [
     events: [
       { id: 'd1-standup', title: 'Standup', attendees: ['margo'], start: t('9:00'), duration: 15, fixed: true, reward: { morale: 1 } },
       {
-        id: 'd1-kestrel', proposed: t('11:00'), title: 'Investor call · Kestrel Ventures', attendees: ['margo'], start: null, duration: 45,
+        id: 'd1-kestrel', proposed: t('11:00'), title: 'Investor call · Kestrel Ventures', bumpPenalty: { standing: -6, runway: -1000 }, attendees: ['margo'], start: null, duration: 45,
         prep: 30, window: [t('10:00'), t('16:00')], overrun: 20,
         reward: { runway: 4000, standing: 6 }, missPenalty: { standing: -15, runway: -3000 }, declinePenalty: { standing: -20 },
         note: 'The big one. Needs 30 min clear beforehand to prep.',
       },
       {
-        id: 'd1-wren', title: '1:1 · Wren (Design)', attendees: ['margo'], start: null, duration: 30,
+        id: 'd1-wren', title: '1:1 · Wren (Design)', bumpPenalty: {}, attendees: ['margo'], start: null, duration: 30,
         reward: { morale: 4 }, missPenalty: { morale: -5 }, declinePenalty: { morale: -4 },
         note: 'Wren has "a few concerns". Wren always has a few concerns.',
       },
       {
-        id: 'd1-podcast', proposed: t('12:30'), title: 'Podcast · "Leaf It Out"', attendees: ['margo'], start: null, duration: 60,
+        id: 'd1-podcast', proposed: t('12:30'), title: 'Podcast · "Leaf It Out"', minOk: 45, bumpPenalty: { standing: -3 }, attendees: ['margo'], start: null, duration: 60,
         window: [t('13:00'), t('16:30')], coffee: true,
         reward: { standing: 4, runway: 500 }, missPenalty: { standing: -6 }, declinePenalty: { standing: -5 },
         note: 'Afternoons only. Margo needs her coffee first.',
       },
       {
-        id: 'd1-lunch', proposed: t('12:00'), title: "Margo's lunch 🥗", attendees: ['margo'], start: null, duration: 45, kind: 'personal',
+        id: 'd1-lunch', proposed: t('12:00'), title: "Margo's lunch 🥗", minOk: 30, attendees: ['margo'], start: null, duration: 45, kind: 'personal',
         window: [t('12:00'), t('14:00')],
         reward: { morale: 2 }, missPenalty: { morale: -6, standing: -3 }, declinePenalty: { morale: -6, standing: -2 },
         note: 'Protect this. You do not want to meet hangry Margo.',
       },
       {
-        id: 'd1-interview', proposed: t('9:30'), title: 'Interview · Ops candidate', attendees: ['margo'], start: null, duration: 30,
+        id: 'd1-interview', proposed: t('9:30'), title: 'Interview · Ops candidate', overrun: -10, bumpPenalty: { morale: -3 }, attendees: ['margo'], start: null, duration: 30,
         reward: { morale: 3 }, missPenalty: { morale: -3, stress: 3 }, declinePenalty: { morale: -2 },
         note: 'Candidate is driving two hours for this. No pressure.',
       },
@@ -148,7 +148,7 @@ export const DAYS: DayDef[] = [
       {
         at: t('12:45'), type: 'request',
         event: {
-          id: 'd1-gerald', title: 'Sync · Gerald (Board)', attendees: ['margo'], start: null, duration: 15, deadline: t('16:00'),
+          id: 'd1-gerald', title: 'Sync · Gerald (Board)', bumpPenalty: { standing: -5 }, attendees: ['margo'], start: null, duration: 15, deadline: t('16:00'),
           reward: { standing: 3 }, missPenalty: { standing: -8 }, declinePenalty: { standing: -6 },
           note: 'Must start before 4pm. Gerald will "just pop in" otherwise.',
         },
@@ -204,30 +204,30 @@ export const DAYS: DayDef[] = [
       { id: 'd2-standup', title: 'Standup', attendees: ['margo', 'theo'], start: t('9:00'), duration: 15, fixed: true, reward: { morale: 1 } },
       { id: 'd2-focus', title: 'Focus time 🔒', attendees: ['theo'], start: t('13:00'), duration: 240, fixed: true, kind: 'focus', note: 'Sacred.' },
       {
-        id: 'd2-review', proposed: t('10:00'), title: 'Product review', attendees: ['margo', 'theo'], start: null, duration: 60, overrun: 30,
+        id: 'd2-review', proposed: t('10:00'), title: 'Product review', minOk: 45, bumpPenalty: { standing: -4, morale: -2 }, attendees: ['margo', 'theo'], start: null, duration: 60, overrun: 30,
         reward: { morale: 5, standing: 3 }, missPenalty: { standing: -8, morale: -4 }, declinePenalty: { standing: -6 },
         note: 'Both of them. These always run long.',
       },
       {
-        id: 'd2-press', proposed: t('10:30'), title: 'Press · TechLeaf interview', attendees: ['margo'], start: null, duration: 30, window: [t('10:00'), t('12:00')], coffee: true,
+        id: 'd2-press', proposed: t('10:30'), title: 'Press · TechLeaf interview', noBump: true, attendees: ['margo'], start: null, duration: 30, window: [t('10:00'), t('12:00')], coffee: true,
         reward: { standing: 5, runway: 1000 }, missPenalty: { standing: -8 }, declinePenalty: { standing: -5 },
         note: 'Morning slot. Without coffee she says "synergy" a lot.',
       },
       {
-        id: 'd2-hire', title: 'Interview · Senior Engineer', attendees: ['theo'], start: null, duration: 45,
+        id: 'd2-hire', title: 'Interview · Senior Engineer', overrun: -15, bumpPenalty: { morale: -3 }, attendees: ['theo'], start: null, duration: 45,
         reward: { morale: 4 }, missPenalty: { morale: -6 }, declinePenalty: { morale: -4 },
       },
       {
-        id: 'd2-vendor', proposed: t('14:00'), title: 'Demo · CloudCompost', attendees: ['theo'], start: null, duration: 90,
+        id: 'd2-vendor', proposed: t('14:00'), title: 'Demo · CloudCompost', minOk: 45, bumpPenalty: { morale: -1 }, attendees: ['theo'], start: null, duration: 90,
         reward: { morale: 2 }, missPenalty: { morale: -2 }, declinePenalty: { morale: -3 },
-        note: 'Theo really wants this one. It is 90 minutes long.',
+        note: 'Theo really wants this one. It is 90 minutes long. (It could be 45. Do not tell Theo.)',
       },
       {
-        id: 'd2-mlunch', proposed: t('12:30'), title: "Margo's lunch 🥗", attendees: ['margo'], start: null, duration: 45, kind: 'personal', window: [t('12:00'), t('14:00')],
+        id: 'd2-mlunch', proposed: t('12:30'), title: "Margo's lunch 🥗", minOk: 30, attendees: ['margo'], start: null, duration: 45, kind: 'personal', window: [t('12:00'), t('14:00')],
         reward: { morale: 2 }, missPenalty: { morale: -6, standing: -3 }, declinePenalty: { morale: -6 },
       },
       {
-        id: 'd2-tlunch', proposed: t('12:00'), title: "Theo's lunch 🍜", attendees: ['theo'], start: null, duration: 30, kind: 'personal', window: [t('11:30'), t('12:30')],
+        id: 'd2-tlunch', proposed: t('12:00'), title: "Theo's lunch 🍜", minOk: 15, attendees: ['theo'], start: null, duration: 30, kind: 'personal', window: [t('11:30'), t('12:30')],
         reward: { morale: 2 }, missPenalty: { morale: -4 }, declinePenalty: { morale: -4 },
         note: 'Before focus time, or he forgets to eat until 6pm.',
       },
@@ -237,7 +237,7 @@ export const DAYS: DayDef[] = [
       {
         at: t('10:20'), type: 'request',
         event: {
-          id: 'd2-pricing', title: 'Pricing chat (urgent)', attendees: ['margo', 'theo'], start: null, duration: 30, deadline: t('15:00'),
+          id: 'd2-pricing', title: 'Pricing chat (urgent)', bumpPenalty: { standing: -6 }, attendees: ['margo', 'theo'], start: null, duration: 30, deadline: t('15:00'),
           reward: { standing: 6, runway: 1000 }, missPenalty: { standing: -10 }, declinePenalty: { standing: -10 },
           note: 'Both of them, 30 min, must start before 3pm. Good luck.',
         },
@@ -304,30 +304,30 @@ export const DAYS: DayDef[] = [
       { id: 'd3-focus', title: 'Focus time 🔒', attendees: ['theo'], start: t('13:00'), duration: 240, fixed: true, kind: 'focus' },
       { id: 'd3-board', title: 'Board call', attendees: ['margo', 'theo'], start: t('17:00'), duration: 60, fixed: true, force: true, reward: { standing: 3 } },
       {
-        id: 'd3-kestrel', proposed: t('11:00'), title: 'Kestrel partner meeting 💰', attendees: ['margo', 'theo'], start: null, duration: 60, prep: 30, coffee: true, overrun: 15,
+        id: 'd3-kestrel', proposed: t('11:00'), title: 'Kestrel partner meeting 💰', noBump: true, attendees: ['margo', 'theo'], start: null, duration: 60, prep: 30, coffee: true, overrun: 15,
         window: [t('10:00'), t('11:30')], strikeOnMiss: true,
         reward: { runway: 12000, standing: 10 }, missPenalty: { runway: -8000, standing: -20 }, declinePenalty: { standing: -25 },
         note: 'Start by 11:30 (they fly out). 30 min prep. Margo needs coffee. Miss it = strike.',
       },
       {
-        id: 'd3-sam', title: '1:1 · Margo & Sam: "Restructuring"', attendees: ['margo'], start: null, duration: 30,
+        id: 'd3-sam', title: '1:1 · Margo & Sam: "Restructuring"', overrun: -15, bumpPenalty: {}, attendees: ['margo'], start: null, duration: 30,
         reward: { standing: 3 }, missPenalty: { standing: -4 }, declinePenalty: { standing: -4 },
         note: 'Sam from Marketing. That calendar title is… a lot.',
       },
       {
-        id: 'd3-arch', proposed: t('10:00'), title: 'Architecture review', attendees: ['theo'], start: null, duration: 60,
+        id: 'd3-arch', proposed: t('10:00'), title: 'Architecture review', minOk: 45, bumpPenalty: { morale: -3 }, attendees: ['theo'], start: null, duration: 60,
         reward: { morale: 4 }, missPenalty: { morale: -5 }, declinePenalty: { morale: -4 },
       },
       {
-        id: 'd3-dinnerprep', proposed: t('15:00'), title: 'Investor dinner prep', attendees: ['margo'], start: null, duration: 30, window: [t('14:00'), t('16:30')],
+        id: 'd3-dinnerprep', proposed: t('15:00'), title: 'Investor dinner prep', minOk: 15, noBump: true, attendees: ['margo'], start: null, duration: 30, window: [t('14:00'), t('16:30')],
         reward: { standing: 3 }, missPenalty: { standing: -5 }, declinePenalty: { standing: -4 },
       },
       {
-        id: 'd3-mlunch', proposed: t('12:00'), title: "Margo's lunch 🥗", attendees: ['margo'], start: null, duration: 45, kind: 'personal', window: [t('12:00'), t('14:00')],
+        id: 'd3-mlunch', proposed: t('12:00'), title: "Margo's lunch 🥗", minOk: 30, attendees: ['margo'], start: null, duration: 45, kind: 'personal', window: [t('12:00'), t('14:00')],
         reward: { morale: 2 }, missPenalty: { morale: -6, standing: -3 }, declinePenalty: { morale: -6 },
       },
       {
-        id: 'd3-tlunch', proposed: t('12:00'), title: "Theo's lunch 🍜", attendees: ['theo'], start: null, duration: 30, kind: 'personal', window: [t('11:30'), t('12:30')],
+        id: 'd3-tlunch', proposed: t('12:00'), title: "Theo's lunch 🍜", minOk: 15, attendees: ['theo'], start: null, duration: 30, kind: 'personal', window: [t('11:30'), t('12:30')],
         reward: { morale: 2 }, missPenalty: { morale: -4 }, declinePenalty: { morale: -4 },
       },
     ],
@@ -375,7 +375,7 @@ export const DAYS: DayDef[] = [
       {
         at: t('13:20'), type: 'insert',
         event: {
-          id: 'd3-sync', title: 'Quick sync (Margo booked it)', attendees: ['margo', 'theo'], start: t('14:00'), duration: 30,
+          id: 'd3-sync', title: 'Quick sync (Margo booked it)', bumpPenalty: { standing: -4 }, attendees: ['margo', 'theo'], start: t('14:00'), duration: 30,
           reward: { standing: 2 }, missPenalty: { standing: -6 }, declinePenalty: { standing: -6 },
           note: "Margo put this right in Theo's focus block. She said don't move it.",
         },

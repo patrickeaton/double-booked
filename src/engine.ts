@@ -21,6 +21,8 @@ export function newGame() {
   S.strikeNotes = [];
   S.flags = [];
   S.ledger = [];
+  S.incoming = [];
+  S.carry = [];
   setupDay(0);
 }
 
@@ -32,6 +34,8 @@ export function continueGame() {
   S.strikeNotes = [...save.strikeNotes];
   S.flags = [...save.flags];
   S.ledger = [];
+  S.incoming = save.incoming ?? [];
+  S.carry = [];
   setupDay(save.dayIndex);
 }
 
@@ -44,8 +48,10 @@ export function setupDay(i: number) {
   S.startMeters = { ...S.meters };
   S.events = d.events.map((e) => {
     const start = e.start ?? e.proposed ?? null;
-    return { ...e, start, status: start === null ? 'pending' : 'scheduled' };
+    return { ...e, start, baseDuration: e.duration, status: start === null ? 'pending' : 'scheduled' };
   });
+  S.events.push(...S.incoming.map((e) => ({ ...e })));
+  S.carry = [];
   S.messages = [];
   S.tasks = [];
   S.orders = [];
@@ -81,7 +87,7 @@ export function startDay() {
 
 // ───────────────────────────── clock ─────────────────────────────
 
-const MS_PER_MIN = 520;
+const MS_PER_MIN = 333; // 9am–6pm in ~3 real minutes
 let acc = 0;
 let last = 0;
 let running = false;
@@ -198,13 +204,13 @@ function fire(s: Script) {
       addMessage(s.msg);
       break;
     case 'request': {
-      S.events.push({ ...s.event, status: 'pending', fresh: true });
+      S.events.push({ ...s.event, baseDuration: s.event.duration, status: 'pending', fresh: true });
       if (s.msg) addMessage(s.msg);
       banner('calendar', '📥 New request', s.event.title);
       break;
     }
     case 'insert': {
-      const ev: CalEvent = { ...s.event, status: 'scheduled', fresh: true };
+      const ev: CalEvent = { ...s.event, baseDuration: s.event.duration, status: 'scheduled', fresh: true };
       S.events.push(ev);
       if (s.msg) addMessage(s.msg);
       else banner('calendar', '📅 Calendar changed', ev.title);
@@ -285,16 +291,91 @@ function startEvent(e: CalEvent) {
     else if (got.item !== EXECS[who].drink) applyEffects({ standing: -4 }, `Wrong coffee before ${e.title}. ${EXECS[who].short} stares at it.`);
     else applyEffects({ standing: 2 }, `Perfect coffee before ${e.title}.`);
   }
+  e.planned = e.duration;
   if (e.overrun) {
-    e.duration += e.overrun;
+    e.duration = Math.max(10, e.duration + e.overrun);
     e.overranBy = e.overrun;
-    banner('calendar', '⏳ Running long', `${e.title} will run ${e.overrun} min over.`);
+    if (e.overrun > 0) banner('calendar', '⏳ Running long', `${e.title} will run ${e.overrun} min over.`);
+    else banner('calendar', '🎉 Wrapping early', `${e.title} will finish ${-e.overrun} min early.`);
   }
 }
 
 function finishEvent(e: CalEvent) {
   e.status = 'done';
-  if (e.reward) applyEffects(e.reward, `${e.title} went well.`);
+  const booked = e.planned ?? e.duration;
+  const ok = e.minOk ?? e.baseDuration ?? booked;
+  if (booked >= ok) {
+    if (e.reward) applyEffects(e.reward, `${e.title} went well.`);
+    return;
+  }
+  // Cut short: some of the upside, a slice of the downside. Always better than missing it.
+  const r = Math.min(1, (ok - booked) / ok);
+  const fx: Effects = {};
+  for (const [k, v] of Object.entries(e.reward ?? {}) as [keyof Effects, number][]) if (v > 0) fx[k] = Math.round(v * (1 - r));
+  for (const [k, v] of Object.entries(e.missPenalty ?? { standing: -5 }) as [keyof Effects, number][]) {
+    fx[k] = (fx[k] ?? 0) + Math.round(v * Math.min(0.5, r));
+  }
+  applyEffects(fx, `${e.title} got cut short (${booked} of ${ok} min).`);
+}
+
+// ───────────────────────────── resizing, wrapping up, bumping ─────────────────────────────
+
+export const canResize = (e: CalEvent) => !e.fixed && e.kind !== 'focus' && (e.status === 'pending' || e.status === 'scheduled');
+export const canWrap = (e: CalEvent) => !e.fixed && e.kind !== 'focus' && e.status === 'running';
+export const canBump = (e: CalEvent) =>
+  !e.fixed && !e.noBump && e.kind !== 'personal' && (e.status === 'pending' || e.status === 'scheduled') && S.dayIndex + 1 < DAYS.length;
+
+export function resizeEvent(id: string, delta: number) {
+  const e = findEvent(id);
+  if (!e || !canResize(e)) return;
+  const max = e.start !== null ? DAY_END - e.start : 180;
+  e.duration = Math.max(15, Math.min(max, e.duration + delta));
+  dirty();
+}
+
+export function wrapUpNow(id: string) {
+  const e = findEvent(id);
+  if (!e || !canWrap(e) || e.start === null) return;
+  const elapsed = Math.max(5, S.now - e.start);
+  e.planned = Math.min(e.planned ?? elapsed, elapsed);
+  e.duration = elapsed;
+  S.selected = null;
+  finishEvent(e);
+  banner('calendar', '✂️ Wrapped up', `${e.title} ended at ${fmt(S.now)}.`);
+}
+
+export function bumpPenaltyFor(e: CalEvent): Effects {
+  const base: Effects = e.bumpPenalty ?? Object.fromEntries(Object.entries(e.declinePenalty ?? { standing: -3 }).map(([k, v]) => [k, Math.round((v as number) / 2)]));
+  const mult = 1 + (e.bumps ?? 0); // pushing the same thing twice annoys people more
+  return Object.fromEntries(Object.entries(base).map(([k, v]) => [k, (v as number) * mult]));
+}
+
+export function bumpEvent(id: string) {
+  const e = findEvent(id);
+  if (!e || !canBump(e)) return;
+  const fx = bumpPenaltyFor(e);
+  e.status = 'bumped';
+  S.selected = null;
+  const bumps = (e.bumps ?? 0) + 1;
+  S.carry.push({
+    ...e,
+    id: `${e.id}+`,
+    start: null,
+    proposed: undefined,
+    deadline: undefined,
+    window: undefined,
+    duration: e.baseDuration ?? e.duration,
+    status: 'pending',
+    fresh: true,
+    bumps,
+    note: `Pushed from yesterday${bumps > 1 ? ` (${bumps}×)` : ''}. ${(e.note ?? '').replace(/^Pushed from yesterday[^.]*\. /, '')}`.trim(),
+  });
+  if (Object.values(fx).some((v) => v)) applyEffects(fx, `Pushed to tomorrow: ${e.title}`);
+  else {
+    S.log.push({ at: S.now, text: `Pushed to tomorrow: ${e.title} (nobody minded)`, effects: {} });
+    banner('calendar', '📆 Pushed to tomorrow', `${e.title}. Nobody minded.`);
+  }
+  dirty();
 }
 
 function missEvent(e: CalEvent, text: string) {
@@ -360,11 +441,15 @@ export function issuesFor(e: CalEvent): Issue[] {
     if (e.deadline) out.push({ icon: '⏰', text: `Book before ${fmt(e.deadline)}`, bad: false });
     if (e.prep) out.push({ icon: '📋', text: `${e.prep}m prep before`, bad: false });
     if (e.coffee) out.push({ icon: '☕', text: 'Coffee first', bad: false });
+    if (e.bumps) out.push({ icon: '📆', text: `Pushed ${e.bumps}×`, bad: false });
+    if (e.minOk && e.minOk < (e.baseDuration ?? e.duration)) out.push({ icon: '✂️', text: `Can be ${e.minOk}m`, bad: false });
     for (const id of day().rules) if (RULES[id].id === 'max60' && RULES[id].check(e)) out.push({ icon: '⚠️', text: RULES[id].short, bad: true });
     return out;
   }
   if (e.status !== 'scheduled') return out;
   const s = e.start;
+  const ok = e.minOk ?? e.baseDuration ?? e.duration;
+  if (e.duration < ok) out.push({ icon: '✂️', text: `Too short (needs ${ok}m)`, bad: true });
   if (blocks(e)) {
     const clash = S.events.find((o) => o !== e && active(o) && blocks(o) && shares(o, e) && o.start !== null && overlaps(s, end(e), o.start, end(o)));
     if (clash) out.push({ icon: '⛔', text: `Clashes with ${clash.title}`, bad: true });
@@ -557,6 +642,7 @@ export function endDay() {
     S.strikeNotes.push(n);
   }
 
+  if (S.carry.length) notes.push(`Pushed to tomorrow: ${S.carry.map((e) => e.title).join(', ')}.`);
   S.meters.runway -= PAYROLL;
   S.ledger.unshift({ at: DAY_END, label: 'Payroll', amount: -PAYROLL });
   notes.push(`Payroll went out: ${fmtMoney(PAYROLL)}.`);
@@ -585,6 +671,8 @@ const weight = (e: Effects) =>
 
 export function nextDay() {
   S.meters.stress = Math.max(0, S.meters.stress - 25);
+  S.incoming = S.carry;
+  S.carry = [];
   if (S.dayIndex + 1 >= DAYS.length) {
     S.phase = 'end';
     writeSave();
