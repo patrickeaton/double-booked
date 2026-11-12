@@ -415,3 +415,13 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .btn.saved { background: #ffd166; }
 .saved-drink { display: flex; align-items: center; gap: 8px; background: #fff7ee; border-radius: 12px; padding: 8px 10px; margin-bottom: 6px; }
 .saved-name { flex: 1; font-weight: 700; font-size: 13px; }
+
+/* Window controls on app panes: full screen (tablet) and close. */
+.pane.has-win { position: relative; }
+.has-win .app-head { padding-right: 86px; }
+.win-ctrls { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; z-index: 5; }
+.win-btn { width: 32px; height: 32px; border-radius: 99px; background: #ece8de; color: var(--ink); font-size: 15px; font-weight: 800; display: grid; place-items: center; }
+.win-btn:active { transform: scale(0.92); }
+@media (max-width: 819px) { .has-win .app-head { padding-right: 50px; } }
+
+.day-sep { width: fit-content; margin: 12px auto 6px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); background: #f1eee6; border-radius: 99px; padding: 3px 10px; }

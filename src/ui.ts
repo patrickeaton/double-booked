@@ -8,7 +8,7 @@ import {
 } from './engine';
 import { MAX_SHORTCUTS, addShortcut, removeShortcut, runShortcut, shortcutLabel } from './shortcuts';
 import { METER_LABEL, S, dirty, fmtEffect, fmtMoney, isGood, readSave, setRenderer } from './state';
-import type { AppId, CalEvent, ExecId, InboxApp, Meter } from './types';
+import type { AppId, CalEvent, ExecId, InboxApp, Meter, RideAction } from './types';
 
 // ───────────────────────────── tiny DOM helper ─────────────────────────────
 type Child = Node | string | number | null | undefined | false;
@@ -92,6 +92,16 @@ function keepScroll(container: HTMLElement, build: () => void) {
 }
 const stickCounts = new Map<string, number>();
 
+/** Tablet layout: both panes, the app full screen, or the calendar alone (app closed). */
+let layout: 'split' | 'app' | 'cal' = 'split';
+
+function winCtrls(isSplit: boolean) {
+  return h('div', { class: 'win-ctrls' },
+    isSplit && h('button', { class: 'win-btn', title: layout === 'app' ? 'Exit full screen' : 'Full screen', onclick: () => { layout = layout === 'app' ? 'split' : 'app'; dirty(); } }, layout === 'app' ? '⤡' : '⤢'),
+    h('button', { class: 'win-btn', title: 'Close', onclick: () => { if (isSplit) layout = 'cal'; else openApp('calendar'); dirty(); } }, '✕'),
+  );
+}
+
 function render() {
   const isSplit = split.matches;
   refs.device.classList.toggle('is-split', isSplit);
@@ -104,10 +114,12 @@ function render() {
     const panes: HTMLElement[] = [];
     if (isSplit) {
       if (S.app === 'calendar' || !hasApp(S.app)) S.app = hasApp('mail') ? 'mail' : 'huddle';
-      panes.push(h('section', { class: 'pane pane-cal' }, renderCalendar()));
-      panes.push(h('section', { class: 'pane pane-app' }, renderApp(S.app)));
+      if (layout !== 'app') panes.push(h('section', { class: 'pane pane-cal' }, renderCalendar()));
+      if (layout !== 'cal') panes.push(h('section', { class: 'pane pane-app has-win' }, renderApp(S.app), winCtrls(true)));
     } else {
-      panes.push(h('section', { class: 'pane pane-app' }, S.app === 'calendar' ? renderCalendar() : renderApp(S.app)));
+      panes.push(S.app === 'calendar'
+        ? h('section', { class: 'pane pane-app' }, renderCalendar())
+        : h('section', { class: 'pane pane-app has-win' }, renderApp(S.app), winCtrls(false)));
     }
     refs.main.replaceChildren(...panes);
   });
@@ -214,7 +226,7 @@ function badgeFor(app: AppId): number {
 function renderDock(isSplit: boolean) {
   return APPS.filter((a) => hasApp(a.id) && !(isSplit && a.id === 'calendar')).map((a) => {
     const n = badgeFor(a.id);
-    return h('button', { class: `dock-app ${S.app === a.id ? 'active' : ''}`, onclick: () => openApp(a.id) },
+    return h('button', { class: `dock-app ${S.app === a.id ? 'active' : ''}`, onclick: () => { if (layout === 'cal') layout = 'split'; openApp(a.id); } },
       h('span', { class: 'app-icon', style: `background:${a.color}` }, a.icon,
         n > 0 ? h('span', { class: 'badge' }, n) : isNewApp(a.id) ? h('span', { class: 'badge new' }, 'NEW') : null),
       h('span', { class: 'app-name' }, a.name),
@@ -530,6 +542,10 @@ function choiceButtons(m: (typeof S.messages)[number]) {
   );
 }
 
+/** "9:40am" for today, "Tue" for earlier days. */
+const msgTime = (m: { at: number; day?: number }) => ((m.day ?? S.dayIndex) === S.dayIndex ? fmt(m.at) : dayAt(m.day!).weekday);
+const dayName = (i: number) => (i === S.dayIndex ? 'Today' : i === S.dayIndex - 1 ? `Yesterday · ${dayAt(i).weekday}` : `${dayAt(i).weekday} · Day ${i + 1}`);
+
 function renderMail() {
   const mails = S.messages.filter((m) => m.app === 'mail').slice().reverse();
   const open = S.messages.find((m) => m.id === S.openMail);
@@ -544,7 +560,7 @@ function renderMail() {
       ),
       h('div', { class: 'scroll', 'data-keep': `mail-${open.id}` },
         h('article', { class: 'mail-open' },
-          h('div', { class: 'mail-from' }, h('span', { class: 'avatar-dot', style: `background:${avatarColor(open.from)}` }, open.from[0]), h('div', {}, h('b', {}, open.from), h('div', { class: 'muted small' }, fmt(open.at)))),
+          h('div', { class: 'mail-from' }, h('span', { class: 'avatar-dot', style: `background:${avatarColor(open.from)}` }, open.from[0]), h('div', {}, h('b', {}, open.from), h('div', { class: 'muted small' }, msgTime(open)))),
           h('h3', {}, open.subject ?? '(no subject)'),
           h('div', { class: 'mail-body' }, open.body),
           choiceButtons(open),
@@ -560,7 +576,7 @@ function renderMail() {
         h('button', { class: `mail-row ${m.read ? '' : 'unread'}`, onclick: () => { S.openMail = m.id; dirty(); } },
           h('span', { class: 'avatar-dot', style: `background:${avatarColor(m.from)}` }, m.from[0]),
           h('span', { class: 'mail-row-text' },
-            h('span', { class: 'mail-row-top' }, h('b', {}, m.from), h('span', { class: 'muted small' }, fmt(m.at))),
+            h('span', { class: 'mail-row-top' }, h('b', {}, m.from), h('span', { class: 'muted small' }, msgTime(m))),
             h('span', { class: 'mail-subj' }, m.choices && m.chosen === undefined ? '⚡ ' : '', m.subject ?? ''),
             h('span', { class: 'muted small clamp' }, m.body),
           ),
@@ -577,7 +593,8 @@ function renderFeed(app: InboxApp, title: string, sub: string) {
     head(title, sub),
     h('div', { class: 'scroll', 'data-keep': `feed-${app}`, 'data-stick': 'bottom', 'data-count': msgs.length },
       msgs.length === 0 ? h('p', { class: 'empty' }, app === 'messages' ? 'No texts yet. Your friends think you\'re busy.' : 'Quiet… too quiet.') : null,
-      ...msgs.map((m) =>
+      ...msgs.flatMap((m, i) => [
+        (i === 0 || (msgs[i - 1].day ?? 0) !== (m.day ?? 0)) ? h('div', { class: 'day-sep' }, dayName(m.day ?? 0)) : null,
         h('div', { class: 'bubble-row' },
           h('span', { class: 'avatar-dot', style: `background:${avatarColor(m.from)}` }, m.from[0]),
           h('div', { class: 'bubble-wrap' },
@@ -586,7 +603,7 @@ function renderFeed(app: InboxApp, title: string, sub: string) {
             choiceButtons(m),
           ),
         ),
-      ),
+      ]),
     ),
   );
 }
@@ -794,7 +811,8 @@ function renderTably() {
   );
 }
 
-let pfKind: 'coffee' | 'gift' | 'rides' = 'coffee';
+let pfKind: 'coffee' | 'gift' | 'ride' = 'coffee';
+let pfRide: RideAction = 'book';
 let pfTo: ExecId = 'theo';
 let pfDrink = '';
 let pfProduct = '';
@@ -802,11 +820,11 @@ let pfPay: 'company' | 'me' = 'company';
 
 function renderPresto() {
   const full = S.shortcuts.length >= MAX_SHORTCUTS;
-  const kinds = (['coffee', 'gift', 'rides'] as const).filter((k) => k === 'coffee' || (k === 'gift' ? hasApp('bundl') : hasApp('ryde')));
+  const kinds = (['coffee', 'gift', 'ride'] as const).filter((k) => k === 'coffee' || (k === 'gift' ? hasApp('bundl') : hasApp('ryde')));
   if (!kinds.includes(pfKind)) pfKind = 'coffee';
   const gifts = PRODUCTS;
   if (!pfProduct) pfProduct = gifts[0].id;
-  const draft = pfKind === 'coffee' ? { kind: 'coffee' as const, drink: pfDrink, to: pfTo } : pfKind === 'gift' ? { kind: 'gift' as const, product: pfProduct, pay: pfPay } : { kind: 'rides' as const };
+  const draft = pfKind === 'coffee' ? { kind: 'coffee' as const, drink: pfDrink, to: pfTo } : pfKind === 'gift' ? { kind: 'gift' as const, product: pfProduct, pay: pfPay } : { kind: 'ride' as const, action: pfRide, to: pfTo };
   const dupe = S.shortcuts.some((s) => shortcutLabel(s) === shortcutLabel(draft));
   return h('div', { class: 'app presto' },
     head('Presto', `Shortcuts · ${S.shortcuts.length}/${MAX_SHORTCUTS} slots`),
@@ -818,7 +836,7 @@ function renderPresto() {
         h('button', { class: 'btn', onclick: () => removeShortcut(sc.id!) }, '✕'),
       )),
       h('h4', {}, 'New shortcut'),
-      h('div', { class: 'seg' }, ...kinds.map((k) => h('button', { class: `seg-btn ${pfKind === k ? 'on' : ''}`, onclick: () => { pfKind = k; dirty(); } }, k === 'coffee' ? '☕ Coffee' : k === 'gift' ? '📦 Gift' : '🚕 Rides'))),
+      h('div', { class: 'seg' }, ...kinds.map((k) => h('button', { class: `seg-btn ${pfKind === k ? 'on' : ''}`, onclick: () => { pfKind = k; dirty(); } }, k === 'coffee' ? '☕ Coffee' : k === 'gift' ? '📦 Gift' : '🚕 Ride'))),
       pfKind === 'coffee' && h('div', { class: 'sc-build' },
         h('div', { class: 'seg' }, ...(Object.keys(EXECS) as ExecId[]).filter((x) => DAYS.slice(0, S.dayIndex + 1).some((d) => d.execs.includes(x)) || S.endless).map((x) =>
           h('button', { class: `seg-btn ${pfTo === x ? 'on' : ''}`, onclick: () => { pfTo = x; dirty(); } }, `${EXECS[x].emoji} ${EXECS[x].short}`))),
@@ -837,7 +855,13 @@ function renderPresto() {
         h('div', { class: 'seg' }, ...(['company', 'me'] as const).map((p) => h('button', { class: `seg-btn ${pfPay === p ? 'on' : ''}`, onclick: () => { pfPay = p; dirty(); } }, p === 'company' ? '💳 Company card' : '🙋 My card'))),
         h('p', { class: 'muted small' }, 'Sends to whoever is waiting on a gift.'),
       ),
-      pfKind === 'rides' && h('p', { class: 'muted small sc-build' }, 'Books any missing rides, re-routes ones going to an old address, and cancels rides for meetings that went remote.'),
+      pfKind === 'ride' && h('div', { class: 'sc-build' },
+        h('div', { class: 'seg' }, ...(Object.keys(EXECS) as ExecId[]).filter((x) => DAYS.slice(0, S.dayIndex + 1).some((d) => d.execs.includes(x)) || S.endless).map((x) =>
+          h('button', { class: `seg-btn ${pfTo === x ? 'on' : ''}`, onclick: () => { pfTo = x; dirty(); } }, `${EXECS[x].emoji} ${EXECS[x].short}`))),
+        h('div', { class: 'seg' }, ...(['book', 'reroute', 'cancel'] as RideAction[]).map((a) =>
+          h('button', { class: `seg-btn ${pfRide === a ? 'on' : ''}`, onclick: () => { pfRide = a; dirty(); } }, a === 'book' ? '🚕 Book' : a === 'reroute' ? '🔁 Re-route' : '✖️ Cancel'))),
+        h('p', { class: 'muted small' }, pfRide === 'book' ? 'Books one ride for their next trip that needs one.' : pfRide === 'reroute' ? 'Points one ride at a meeting\'s new address.' : 'Cancels one ride for a meeting that went remote.'),
+      ),
       h('button', { class: 'btn primary wide', disabled: full || dupe || (pfKind === 'coffee' && !pfDrink), onclick: () => addShortcut(draft) }, full ? 'All slots used' : dupe ? 'Already saved' : pfKind === 'coffee' && !pfDrink ? 'Pick a drink' : `Save: ${shortcutLabel(draft)}`),
     ),
   );

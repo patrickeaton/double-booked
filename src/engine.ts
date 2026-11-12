@@ -44,6 +44,7 @@ export function newGame() {
   S.ledger = [];
   S.incoming = [];
   S.carry = [];
+  S.messages = [];
   S.shortcuts = [];
   S.seed = Math.floor(Math.random() * 1e9);
   S.endless = false;
@@ -60,16 +61,33 @@ export function continueGame() {
   S.flags = [...save.flags];
   S.ledger = [];
   S.incoming = save.incoming ?? [];
-  S.shortcuts = save.shortcuts ?? [];
+  S.shortcuts = (save.shortcuts ?? []).filter((s) => (s.kind as string) !== 'rides');
   S.seed = save.seed ?? 1;
   S.endless = save.endless ?? false;
   S.savedDrinks = save.savedDrinks ?? [];
+  S.messages = save.messages ?? [];
   S.carry = [];
   setupDay(save.dayIndex);
 }
 
+/** Earlier days stay in Mail / Messages / Huddle as read, settled history (newest 120 kept). */
+const HISTORY = 120;
+function archiveMessages(beforeDay: number) {
+  S.messages = S.messages
+    .filter((m) => (m.day ?? 0) < beforeDay)
+    .slice(-HISTORY)
+    .map((m) => ({
+      ...m,
+      id: m.id.startsWith('h') ? m.id : `h${m.day ?? 0}-${m.id}`,
+      read: true,
+      chosen: m.choices && m.chosen === undefined ? -1 : m.chosen,
+      expires: undefined,
+    }));
+}
+
 export function setupDay(i: number) {
   S.dayIndex = i;
+  archiveMessages(i);
   writeSave();
   const d = day();
   S.phase = 'memo';
@@ -81,7 +99,6 @@ export function setupDay(i: number) {
   });
   S.events.push(...S.incoming.map((e) => ({ ...e })));
   S.carry = [];
-  S.messages = [];
   S.tasks = [];
   S.orders = [];
   S.log = [];
@@ -646,7 +663,7 @@ const APP_OF: Record<string, AppId> = { mail: 'mail', huddle: 'huddle', messages
 
 export function addMessage(def: MsgDef, quiet = false): Message {
   if (!hasApp(def.app)) def = { ...def, app: 'huddle' }; // apps you don't have yet fall back to chat
-  const m: Message = { ...def, id: `m${uid()}`, at: S.now, read: false };
+  const m: Message = { ...def, id: `m${uid()}`, at: S.now, read: false, day: S.dayIndex };
   if (def.choices && def.expiresIn) m.expires = S.now + def.expiresIn;
   S.messages.push(m);
   if (!quiet && S.app !== APP_OF[def.app]) {
@@ -962,6 +979,7 @@ export function nextDay() {
 export function newEndless() {
   newGame();
   S.endless = true;
+  S.messages = [];
   setupDay(DAYS.length);
 }
 

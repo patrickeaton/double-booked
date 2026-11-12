@@ -112,6 +112,8 @@ export interface Message extends MsgDef {
   id: string;
   at: number;
   read: boolean;
+  /** Which day it arrived (older ones stay in the inbox as history). */
+  day?: number;
   chosen?: number; // -1 = timed out
   expires?: number;
 }
@@ -219,10 +221,13 @@ export interface Product {
   tier: 'cheap' | 'good' | 'lavish';
 }
 
+export type RideAction = 'book' | 'reroute' | 'cancel';
+
 export type Shortcut = { id?: string } & (
   | { kind: 'coffee'; drink: string; to: ExecId }
   | { kind: 'gift'; product: string; pay: 'company' | 'me' }
-  | { kind: 'rides' }
+  /** One ride action, for one exec's trips, one meeting at a time. */
+  | { kind: 'ride'; action: RideAction; to: ExecId }
 );
 
 export interface Restaurant {

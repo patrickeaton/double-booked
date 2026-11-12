@@ -156,11 +156,11 @@ export function addStrike(note: string) {
 
 // ───────────── save / load ─────────────
 const KEY = 'double-booked-save-v1';
-export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[]; shortcuts?: Shortcut[]; seed?: number; endless?: boolean; savedDrinks?: string[] }
+export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[]; shortcuts?: Shortcut[]; seed?: number; endless?: boolean; savedDrinks?: string[]; messages?: Message[] }
 
 export function writeSave() {
   try {
-    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming, shortcuts: S.shortcuts, seed: S.seed, endless: S.endless, savedDrinks: S.savedDrinks };
+    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming, shortcuts: S.shortcuts, seed: S.seed, endless: S.endless, savedDrinks: S.savedDrinks, messages: S.messages };
     localStorage.setItem(KEY, JSON.stringify(s));
   } catch {
     /* storage may be unavailable */
