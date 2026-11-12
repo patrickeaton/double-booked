@@ -203,6 +203,8 @@ export function applyEffects(eff: Effects | undefined, text: string, quiet = fal
     if (eff.standing! > 0) eff.standing = Math.max(1, Math.round(eff.standing! * gainScale(S.meters.standing) * (S.meters.stress >= 60 ? 0.8 : 1)));
     else eff.standing = Math.round(eff.standing! * 1.3);
   }
+  // Morale is the same: easy to lift a grumpy team, hard to keep a happy one climbing.
+  if (eff.morale && eff.morale > 0) eff = { ...eff, morale: Math.max(1, Math.round(eff.morale * gainScale(S.meters.morale))) };
   if (who.length) {
     // How you stand with them changes how much it hurts.
     const work = who.filter((k) => !PERSONAL.includes(k));

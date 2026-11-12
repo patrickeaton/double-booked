@@ -246,6 +246,20 @@ const WEEKEND: { from: string; app: InboxApp; body: string; choices: Choice[]; t
   },
 ];
 
+/** The team's own calendar: things for everyone. They pay out in morale, and cost it when they slip. */
+const TEAM_REQS: { key: string; from: string; app: InboxApp; title: string; body: string; with: 'none' | 'any' | 'both'; dur: number; due: 'today' | 'week'; big?: boolean; catering?: boolean }[] = [
+  { key: 'tlunch', from: 'Bev (People Ops)', app: 'huddle', title: 'Team lunch 🍕', body: 'Team lunch! {dur}, ideally between 12 and 2, {due}. Morale is "vibing low" per my survey.', with: 'none', dur: 60, due: 'today', catering: true },
+  { key: 'learn', from: 'Wren', app: 'huddle', title: 'Lunch & learn: Figma for non-designers', body: "can I do a lunch & learn {due}? {dur}. I'll teach everyone Figma. they will not learn Figma. it'll be fun", with: 'none', dur: 45, due: 'week', catering: true },
+  { key: 'retro', from: 'Theo', app: 'huddle', title: 'Team retro 🔁', body: 'We need a retro. {dur}, whole team, {due}. Bring feelings. Theo will bring sticky notes.', with: 'any', dur: 45, due: 'week' },
+  { key: 'welcome', from: 'Bev (People Ops)', app: 'mail', title: 'Welcome coffee: new hire ☕', body: 'Priya (Support) starts today! Can the team do a {dur} welcome coffee {due}? First impressions!', with: 'none', dur: 30, due: 'today', catering: true },
+  { key: 'training', from: 'Bev (People Ops)', app: 'mail', title: 'Mandatory training: Respect at Work 📋', body: 'Everyone needs {dur} of Respect at Work training {due}. It is mandatory. It has a quiz. Kendall wrote the quiz.', with: 'both', dur: 45, due: 'week', big: true },
+  { key: 'offsite', from: 'Margo', app: 'huddle', title: 'Offsite planning 🏕️', body: 'OFFSITE. we need {dur} with the whole team to plan it, {due}. I\'m thinking yurts. Theo is thinking no.', with: 'both', dur: 60, due: 'week', big: true },
+  { key: 'demo', from: 'Theo', app: 'huddle', title: 'Demo day: what shipped 🚢', body: 'Team demo, {dur}, {due}. Engineers show what shipped. Everyone claps. Nobody asks about the bugs.', with: 'any', dur: 30, due: 'today' },
+  { key: 'social', from: 'Wren', app: 'huddle', title: 'Team social: board games 🎲', body: 'board games after work?? well, during work. {dur}, {due}, whole team. Margo is banned from Monopoly', with: 'none', dur: 60, due: 'week' },
+  { key: 'bday', from: 'Bev (People Ops)', app: 'huddle', title: 'Cake for Ana 🎂', body: "It's Ana's birthday! {dur} for cake {due}, whole team. I've bought a cake shaped like a plant. It is a cake.", with: 'none', dur: 15, due: 'today', catering: true },
+  { key: 'survey', from: 'Bev (People Ops)', app: 'mail', title: 'Engagement survey results 📊', body: 'The engagement survey is back. {dur} to share it with the team {due}, with {exec}. Brace.', with: 'any', dur: 30, due: 'week', big: true },
+];
+
 /** Weekend work: it needs YOU, so it fights your plans for the same calendar. */
 const WEEKEND_WORK: { who: ExecId; app: InboxApp; title: string; duration: number; body: string; stakes: 1 | 2; book?: boolean }[] = [
   { who: 'margo', app: 'huddle', title: 'Investor update draft (Zoom)', duration: 45, body: 'can we jam on the investor update?? 45 mins. today ideally. it\'s fine. it\'s urgent. it\'s fine 🙃', stakes: 2 },
@@ -334,6 +348,42 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
     return bosses.includes(who) ? [who] : null;
   };
   const names = (xs: ExecId[]) => xs.map((x) => ({ margo: 'Margo', theo: 'Theo', dana: 'Dana', me: 'you', team: 'everyone' })[x]).join(' & ');
+
+  // The team's calendar gets its own asks: one or two every workday once you manage it.
+  if (d.execs.includes('team')) {
+    const nTeam = 1 + (chance(r, 0.5) ? 1 : 0);
+    const dow = (3 + dayIndex) % 7;
+    for (let k = 0; k < nTeam; k++) {
+      const opts = TEAM_REQS.filter((m) => !used.has(m.key) && (m.with === 'none' || execAt(m.with)));
+      if (!opts.length) break;
+      const m = pick(r, opts);
+      used.add(m.key);
+      const att: ExecId[] = ['team', ...(m.with === 'none' ? [] : execAt(m.with)!)];
+      const at = t('9:20') + Math.floor(r() * (t('13:30') - t('9:20')));
+      const reward: Effects = m.big ? { morale: 6, standing: 1 } : { morale: 4 };
+      const miss: Effects = m.big ? { morale: -8, standing: -2 } : { morale: -5 };
+      const ev: EventDef = { id: id(), title: m.title, attendees: att, start: null, duration: m.dur, reward, missPenalty: miss, declinePenalty: { morale: m.big ? -6 : -4 }, from: m.from === 'Margo' ? 'margo' : m.from === 'Theo' ? 'theo' : undefined, catering: m.catering ? 'nice' : undefined, note: '' };
+      let due = '';
+      if (m.due === 'week') {
+        let n = (5 - dow + 7) % 7;
+        if (n < 2) n += 7;
+        let dueDay = dayIndex + n;
+        while ([0, 6].includes((3 + dueDay) % 7)) dueDay++;
+        const dayName = new Date(2026, 2, 4 + dueDay).toLocaleDateString('en-GB', { weekday: 'long' });
+        ev.dueDay = dueDay;
+        ev.noBump = true;
+        ev.note = `Whole team. Any day up to ${dayName}.`;
+        due = `this week (by ${dayName})`;
+      } else {
+        const by = Math.min(q15(at + 150 + r() * 90), t('16:30'));
+        ev.deadline = by;
+        ev.note = `Whole team. Must start before ${fmt(by)}.`;
+        due = `today, before ${fmt(by)}`;
+      }
+      const body = m.body.replace('{exec}', names(att.filter((x) => x !== 'team'))).replace('{dur}', `${m.dur} min`).replace('{due}', due);
+      out.push({ at, type: 'request', event: ev, msg: { app: m.app, from: m.from, subject: m.app === 'mail' ? m.title : undefined, body } });
+    }
+  }
 
   // Every weekday from Day 2 brings at least one "sometime this week" request, on top of the usual.
   const laterAt = !d.weekend && dayIndex >= 1 ? t('9:30') + Math.floor(r() * (t('14:00') - t('9:30'))) : -1;

@@ -1587,7 +1587,10 @@ function nightNote() {
 
 export function nextDay() {
   S.meters.stress = Math.max(0, S.meters.stress - nightRest());
-  if (!day().weekend) S.meters.standing = Math.max(0, S.meters.standing - 3);
+  if (!day().weekend) {
+    S.meters.standing = Math.max(0, S.meters.standing - 3);
+    S.meters.morale = Math.max(0, S.meters.morale - 3);
+  }
   S.incoming = S.carry;
   S.carry = [];
   if (S.dayIndex + 1 >= DAYS.length && !S.endless) {
