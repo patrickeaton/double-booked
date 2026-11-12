@@ -813,3 +813,5 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .paused-card small { margin-top: 8px; font-size: 12px; font-weight: 800; color: var(--ink); animation: pulse-text 1.6s ease-in-out infinite; }
 @keyframes pulse-text { 50% { opacity: 0.45; } }
 @media (max-width: 819px) { .overlay { position: fixed; } }
+/* Tablet/desktop frame has big rounded corners: keep the top bar clear of them */
+.is-split .statusbar { padding: 8px 30px 4px; }
