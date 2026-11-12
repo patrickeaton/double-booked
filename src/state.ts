@@ -35,6 +35,8 @@ export interface GameState {
   tickets: Ticket[];
   /** Your standing with each person (0–100, starts at 50). */
   rel: Record<string, number>;
+  /** Standing lost today, before any gains (strikes count the damage, not the net). */
+  lostToday: number;
   /** Meetings you've booked on later days (by absolute day index). */
   future: Record<number, CalEvent[]>;
   /** What earlier days' calendars ended up looking like (read-only). */
@@ -89,6 +91,7 @@ export const S: GameState = {
   past: {},
   tickets: [],
   rel: {},
+  lostToday: 0,
   messages: [],
   call: null,
   tasks: [],
@@ -158,6 +161,8 @@ export const relName = (k: string) => NAMES[k] ?? k;
 export const relOf = (k: string) => S.rel[k] ?? 50;
 export const relWord = (v: number) => (v >= 80 ? 'Big fan' : v >= 65 ? 'Warm' : v >= 45 ? 'Fine' : v >= 30 ? 'Cool' : 'Frosty');
 /** Warm people soften setbacks; frosty ones sharpen them. */
+/** Full gains up to 50, about half at 75, a third near 90. */
+const gainScale = (v: number) => Math.max(0.3, Math.min(1, (100 - v) / 50));
 export const relMult = (k: string) => (relOf(k) >= 65 ? 0.7 : relOf(k) < 30 ? 1.5 : 1);
 
 let who: string[] = [];
@@ -191,6 +196,12 @@ export const fxFor = (people: (string | undefined | null)[], eff: Effects | unde
 
 export function applyEffects(eff: Effects | undefined, text: string, quiet = false) {
   if (!eff) return;
+  if (eff.standing) {
+    eff = { ...eff };
+    // The higher you are, the harder it is to impress anyone. Mistakes hit harder across the board.
+    if (eff.standing! > 0) eff.standing = Math.max(1, Math.round(eff.standing! * gainScale(S.meters.standing)));
+    else eff.standing = Math.round(eff.standing! * 1.3);
+  }
   if (who.length) {
     // How you stand with them changes how much it hurts.
     const work = who.filter((k) => !PERSONAL.includes(k));
@@ -202,7 +213,8 @@ export function applyEffects(eff: Effects | undefined, text: string, quiet = fal
     for (const k of who) {
       const personal = PERSONAL.includes(k);
       const raw = personal ? (eff.morale ?? 0) / 2 - (eff.stress ?? 0) / 2 : (eff.standing ?? 0) + (eff.morale ?? 0) / 2;
-      const d = Math.round(raw * weight);
+      let d = Math.round(raw * weight);
+      if (d > 0) d = Math.max(1, Math.round(d * gainScale(relOf(k))));
       if (!d) continue;
       S.rel[k] = Math.max(0, Math.min(100, relOf(k) + d));
       if (!quiet) S.toasts.push({ id: uid(), text: `${relName(k)} ${d > 0 ? '+' : ''}${d}`, good: d > 0, born: performance.now() });
@@ -210,6 +222,7 @@ export function applyEffects(eff: Effects | undefined, text: string, quiet = fal
   }
   for (const [k, v] of Object.entries(eff) as [Meter, number][]) {
     if (!v) continue;
+    if (k === 'standing' && v < 0) S.lostToday += v;
     S.meters[k] += v;
     if (k !== 'runway') S.meters[k] = Math.max(0, Math.min(100, S.meters[k]));
     if (!quiet) S.toasts.push({ id: uid(), text: fmtEffect(k, v), good: isGood(k, v), born: performance.now() });

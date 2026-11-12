@@ -47,7 +47,7 @@ export function metPeople(): Person[] {
 /** What's going on with them right now, if anything. */
 export function statusOf(p: Person): string | null {
   switch (p.key) {
-    case 'theo': return f('theo-leaves') && S.dayIndex >= 12 ? '🚪 Left for Leafly' : f('theo-leaves') ? '🤫 Quietly interviewing' : f('theo-talk') ? '🤫 Talking to Leafly' : null;
+    case 'theo': return f('gone-theo') ? '🚪 Left for Leafly' : f('theo-leaves') && S.dayIndex >= 12 ? '📦 Last day today' : f('theo-leaves') ? '🤫 Quietly interviewing' : f('theo-talk') ? '🤫 Talking to Leafly' : null;
     case 'dana': return f('gone-dana') ? '🚪 Let go after the board vote' : f('honest-gerald') && S.dayIndex >= 12 ? '📋 Permanent COO' : null;
     case 'margo': return f('margo-ousted') ? '🎨 "Chief Visionary Officer"' : null;
     case 'kendall': return f('kendall-reported') && f('kendall-sabotaged') ? '🖨️ Moved to "special projects"' : S.kendall.sabotaged > 0 ? `✏️ Has edited your calendars ${S.kendall.helped + S.kendall.sabotaged}×` : S.kendall.helped > 0 ? `✏️ Has helped ${S.kendall.helped}×` : null;

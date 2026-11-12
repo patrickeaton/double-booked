@@ -885,6 +885,7 @@ export const DAYS: DayDef[] = [
       },
       { at: t('12:06'), type: 'msg', when: { if: ['backed-margo'] }, msg: { app: 'mail', from: 'Dana Reyes', subject: 'Transition', body: "The board has decided my services are no longer required. Tomorrow is my last day… actually, today is. Agendas are in the shared drive. Nobody will read them." } },
       { at: t('17:58'), type: 'reveal', flag: 'gone-dana', when: { if: ['backed-margo'] } },
+      { at: t('17:59'), type: 'reveal', flag: 'gone-theo', when: { if: ['theo-leaves'] } },
       { at: t('12:06'), type: 'msg', when: { if: ['honest-gerald'] }, msg: { app: 'huddle', from: 'Dana Reyes', body: "I've been made permanent COO. Margo and I have agreed to \"respect each other's process\". Please book us separate rooms." } },
       {
         at: t('9:10'), type: 'effects', when: { if: ['theo-leaves'] }, effects: { morale: -10 }, log: 'Theo resigned. Leafly wanted him Monday.',

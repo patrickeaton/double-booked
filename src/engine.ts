@@ -182,6 +182,7 @@ export function setupDay(i: number) {
   S.phase = 'memo';
   S.now = PREP_TIME;
   S.startMeters = { ...S.meters };
+  S.lostToday = 0;
   S.events = d.events.map((e) => {
     const start = e.start ?? e.proposed ?? null;
     return { ...e, start, baseDuration: e.duration, status: start === null ? 'pending' : 'scheduled' };
@@ -189,6 +190,16 @@ export function setupDay(i: number) {
   S.events.push(...S.incoming.map((e) => ({ ...e })));
   S.events.push(...(S.future[i] ?? []).map((e) => ({ ...e, status: 'scheduled' as const, fresh: false })));
   delete S.future[i];
+  // Saves from before Theo's exit set the flag: if he resigned and his last day has passed, he's gone.
+  if (S.flags.includes('theo-leaves') && i >= 13 && !S.flags.includes('gone-theo')) S.flags.push('gone-theo');
+  const gone = (['margo', 'theo', 'dana'] as ExecId[]).filter((x) => S.flags.includes(`gone-${x}`));
+  if (gone.length) {
+    S.events = S.events
+      .map((e) => (e.attendees.some((a) => gone.includes(a)) ? { ...e, attendees: e.attendees.filter((a) => !gone.includes(a)) } : e))
+      .filter((e) => e.attendees.length > 0);
+    for (const k of Object.keys(S.future)) S.future[+k] = S.future[+k].map((e) => ({ ...e, attendees: e.attendees.filter((a) => !gone.includes(a)) })).filter((e) => e.attendees.length > 0);
+    S.tickets = S.tickets.filter((t) => t.status !== 'open' || !gone.includes(t.who));
+  }
   if (hasApp('trellis') && !d.weekend) {
     const fresh = ticketsFor(i, S.seed, d.execs.filter((x) => x !== 'team' && !S.flags.includes(`gone-${x}`)), S.tickets.map((t) => t.title), S.tickets.some((t) => t.day < i) ? 2 : 3)
       .filter((t) => !S.tickets.some((o) => o.id === t.id))
@@ -1504,7 +1515,9 @@ export function endDay() {
     applyEffects(r.effects, r.text, true);
     if (r.strike) newStrikes.push(r.text);
   }
-  if (S.meters.standing - S.startMeters.standing <= -15) newStrikes.push('Your standing dropped 15+ points today.');
+  const net = S.meters.standing - S.startMeters.standing;
+  if (S.lostToday <= -22) newStrikes.push(`A rough day: you lost ${-S.lostToday} standing, whatever else went right.`);
+  else if (net <= -10) newStrikes.push(`Your standing fell ${-net} points today.`);
   for (const n of newStrikes) {
     S.strikes++;
     S.strikeNotes.push(n);
@@ -1541,6 +1554,7 @@ const weight = (e: Effects) =>
 
 export function nextDay() {
   S.meters.stress = Math.max(0, S.meters.stress - 20);
+  if (!day().weekend) S.meters.standing = Math.max(0, S.meters.standing - 3);
   S.incoming = S.carry;
   S.carry = [];
   if (S.dayIndex + 1 >= DAYS.length && !S.endless) {
