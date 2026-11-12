@@ -149,6 +149,8 @@ export interface Message extends MsgDef {
   /** For advice: which option actually happened. */
   outcome?: number;
   expires?: number;
+  /** A friendly reply you sent to a message that didn't need one. */
+  myReply?: string;
 }
 
 export interface CallDef {

@@ -3,7 +3,7 @@ import { STEP_LABEL, drinkEmoji, drinkName, drinkPrice, optionsFor, specString, 
 import { CAL_END, CAL_START, DAY_END, DAY_START, EXECS, isBoss, PAYROLL, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, TABLE_TIMES, fmt } from './data';
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
-  minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, resume, clockGlide, coffeeRun, teamLunch, treatedToday, canTreat, TREAT_COST, TEAM_SIZE, LUNCH_TIMES, derivedTodos, doPromise, payInvoice, canCater,
+  minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, resume, clockGlide, friendlyReplies, replyFriendly, coffeeRun, teamLunch, treatedToday, canTreat, TREAT_COST, TEAM_SIZE, LUNCH_TIMES, derivedTodos, doPromise, payInvoice, canCater,
   toggleSpeed, scheduleAllTickets, bookAllRequests, unschedule, whereOf, atOffice, placeLabel, padBefore, padAfter, canBuffer, setBuffer, scheduleTicket, ticketBlock, toggleAttendee, canEditAttendees, skippedFrom, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
 } from './engine';
 import { avatarEl } from './avatars';
@@ -970,7 +970,11 @@ const avatarColor = (name: string) => {
 };
 
 function choiceButtons(m: (typeof S.messages)[number]) {
-  if (!m.choices) return null;
+  if (!m.choices) {
+    if (m.myReply) return h('div', { class: 'reply' }, `You: ${m.myReply}`);
+    const opts = friendlyReplies(m);
+    return opts.length ? h('div', { class: 'choices friendly' }, ...opts.map((t) => h('button', { class: 'btn choice soft', onclick: () => replyFriendly(m.id, t) }, t))) : null;
+  }
   if (m.chosen !== undefined) {
     if (m.chosen === -1) return h('div', { class: 'reply' }, h('i', { class: 'muted' }, 'No reply. (Too late.)'));
     if (m.advice && m.outcome !== undefined) {

@@ -343,7 +343,7 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
         event: {
           id: id(), title: w.title, attendees: [w.who, 'me'], start: null, duration: w.duration, remote: true, from: w.who, deadline: Math.min(at + 4 * 60, t('17:00')),
           reward: w.stakes === 2 ? { standing: 5, stress: 7 } : { standing: 3, stress: 5 },
-          missPenalty: w.stakes === 2 ? { standing: -6 } : { standing: -4 }, declinePenalty: w.stakes === 2 ? { standing: -4 } : { standing: -2 },
+          missPenalty: w.stakes === 2 ? { standing: -3 } : { standing: -2 }, declinePenalty: w.stakes === 2 ? { standing: -3 } : { standing: -1 },
           note: 'On a weekend. Saying no is allowed. It is noticed.',
         },
         msg: { app: w.app, from: nm(w.who), subject: w.app === 'mail' ? w.title : undefined, body: w.body },

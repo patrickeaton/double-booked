@@ -837,3 +837,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .treat-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: #fff6e5; border: 1px solid #f3dfb5; border-radius: 14px; padding: 10px 12px; margin-bottom: 12px; }
 .treat-card .btn:disabled { opacity: 0.6; }
 .treat-slots { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+
+/* Friendly replies to messages that didn't ask for anything */
+.choices.friendly { opacity: 0.9; }
+.btn.choice.soft { background: transparent; border: 1px dashed var(--line); font-weight: 600; }

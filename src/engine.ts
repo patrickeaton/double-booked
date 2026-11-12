@@ -3,8 +3,7 @@ import { drinkEmoji, drinkMatch, drinkName, drinkPrice } from './drinks';
 import { CAL_START, DAY_END, DAY_START, EXECS, PAYROLL, PREP_TIME, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, fmt, t } from './data';
 import {
   S, START_METERS, addStrike, applyEffects, banner, dirty, fmtMoney, readSave, uid, writeSave, clearSave,
-  about, fxFor, relOf, REL_PEOPLE,
-} from './state';
+  about, fxFor, relOf, REL_PEOPLE, peopleIn, relName } from './state';
 import { offerShortcut } from './shortcuts';
 import { generateAdhoc } from './adhoc';
 import { ticketsFor } from './tickets';
@@ -1061,6 +1060,42 @@ function chooseRaw(msgId: string, idx: number) {
   }
 }
 
+// ───────────────────────────── friendly replies ─────────────────────────────
+const HELLO = /\b(hi|hello|hey|welcome|heard you're|nice to meet)\b/i;
+const WARM = ['"Thanks for the heads-up 🙂"', '"Ha, love that"', '"Appreciate it 🙏"', '"Happy to help!"', '"Noted, thank you!"', '"You\'re the best"'];
+const MAIL_WARM = ['"Thanks, received!"', '"Thanks! Will do."', '"Much appreciated."'];
+/** Who a message is from, if it's someone you can get to know. */
+export const replyKey = (m: Message) => (m.from.startsWith('Your ') || m.from.startsWith('Accounts') ? null : peopleIn([m.from])[0] ?? null);
+/** Two friendly things to say back to a message that didn't ask for anything. */
+export function friendlyReplies(m: Message): string[] {
+  if (m.choices || m.myReply || (m.day ?? S.dayIndex) !== S.dayIndex || !replyKey(m)) return [];
+  // Only the latest message from them in this app gets a reply.
+  const last = S.messages.filter((x) => x.app === m.app && x.from === m.from).pop();
+  if (last !== m) return [];
+  if (HELLO.test(m.body)) return ['"Nice to meet you! 👋"', '"Looking forward to it 🙂"'];
+  const pool = m.app === 'mail' ? MAIL_WARM : WARM;
+  let h = 0;
+  for (const ch of m.id) h = (h * 31 + ch.charCodeAt(0)) % 997;
+  return [pool[h % pool.length], pool[(h + 1) % pool.length]];
+}
+/** Saying something nice. Builds a little goodwill, once per person per day. */
+export function replyFriendly(msgId: string, text: string) {
+  const m = S.messages.find((x) => x.id === msgId);
+  if (!m || m.choices || m.myReply) return;
+  m.myReply = text;
+  m.read = true;
+  const k = replyKey(m);
+  const flag = `chat-${k}-${S.dayIndex}`;
+  if (k && !S.flags.includes(flag)) {
+    S.flags.push(flag);
+    const v = relOf(k);
+    const d = Math.max(1, Math.round(2 * Math.max(0.3, Math.min(1, (100 - v) / 50))));
+    S.rel[k] = Math.min(100, v + d);
+    S.toasts.push({ id: uid(), text: `${relName(k)} +${d}`, good: true, born: performance.now() });
+  }
+  dirty();
+}
+
 /** Keep a promise from Notes. It takes a few minutes of your attention. */
 export function doPromise(id: string) {
   const task = S.tasks.find((x) => x.id === id);
@@ -1700,8 +1735,8 @@ export function endDay() {
     if (r.strike) newStrikes.push(r.text);
   }
   const net = S.meters.standing - S.startMeters.standing;
-  if (S.lostToday <= -22) newStrikes.push(`A rough day: you lost ${-S.lostToday} standing, whatever else went right.`);
-  else if (net <= -10) newStrikes.push(`Your standing fell ${-net} points today.`);
+  if (S.lostToday <= -30) newStrikes.push(`A rough day: you lost ${-S.lostToday} standing, whatever else went right.`);
+  else if (net <= -12) newStrikes.push(`Your standing fell ${-net} points today.`);
   for (const n of newStrikes) {
     S.strikes++;
     S.strikeNotes.push(n);
