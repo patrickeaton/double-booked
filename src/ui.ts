@@ -9,6 +9,7 @@ import {
 import { avatarEl } from './avatars';
 import { coffeeOf, metPeople, statusOf } from './people';
 import { PRIORITY_LABEL } from './tickets';
+import { play, soundOn, toggleSound } from './sound';
 import { MAX_SHORTCUTS, addShortcut, removeShortcut, runShortcut, shortcutLabel } from './shortcuts';
 import { saveCalPrefs, relOf, relWord, relMult, PERSONAL } from './state';
 import { METER_LABEL, S, dirty, fmtEffect, fmtMoney, isGood, readSave, setRenderer } from './state';
@@ -56,6 +57,8 @@ let refs: {
 };
 
 export function mountUI(root: HTMLElement) {
+  // The phone trills while a call is ringing
+  setInterval(() => { if (S.phase === 'day' && !S.paused && S.call?.status === 'ringing') play('ring'); }, 1600);
   const device = h('div', { class: 'device' });
   refs = {
     device,
@@ -247,6 +250,7 @@ function renderStatus() {
         return h('button', { class: 'start-btn', onclick: startDay, title: n ? `${n} requests still unbooked` : 'Start the day' }, 'Start day', n > 0 && h('span', { class: 'start-count' }, n), ' →');
       })(),
       waitingPill(),
+      h('button', { class: 'chip-btn sound-btn', onclick: () => { toggleSound(); dirty(); }, title: soundOn() ? 'Mute alerts' : 'Turn alerts on', 'aria-label': soundOn() ? 'Mute alerts' : 'Turn alerts on' }, soundOn() ? '🔔' : '🔕'),
       S.phase === 'day' && !S.paused && h('button', { class: 'chip-btn', onclick: toggleSpeed, title: 'Speed' }, `${S.speed}×`),
     ),
   );

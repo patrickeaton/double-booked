@@ -1,5 +1,6 @@
 import type { Ticket } from './tickets';
 import { personKey } from './avatars';
+import { play } from './sound';
 import type { AppId, CalEvent, CallState, Effects, ExecId, LogEntry, Message, Meter, Order, Script, Shortcut, Task } from './types';
 
 export type Phase = 'title' | 'memo' | 'prep' | 'day' | 'review' | 'over' | 'end';
@@ -233,6 +234,7 @@ export function applyEffects(eff: Effects | undefined, text: string, quiet = fal
 
 export function banner(app: AppId, title: string, body: string, action?: BannerAction, ttl?: number) {
   S.banners.push({ id: uid(), app, title, body, born: performance.now(), action, ttl });
+  if (!title.startsWith('📥 Added')) play(/^(💥|⏰|🙅|📋 No prep)/u.test(title) ? 'bad' : title.startsWith('📥 New request') ? 'request' : app);
   while (S.banners.filter((b) => !b.action).length > 3) S.banners.splice(S.banners.findIndex((b) => !b.action), 1);
   while (S.banners.filter((b) => b.action).length > 2) S.banners.splice(S.banners.findIndex((b) => b.action), 1);
   dirty();
