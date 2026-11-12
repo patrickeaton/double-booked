@@ -389,3 +389,9 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .cs-foot { padding: 12px 20px 18px; border-top: 1px solid var(--line); flex: none; display: flex; flex-direction: column; gap: 8px; }
 .cs-head .logo { font-size: 44px; }
 .end .note { margin: 0; }
+
+/* iOS-style back: button on the left, title centred. */
+.back-head { display: grid; grid-template-columns: 1fr auto 1fr; }
+.back-head h2 { text-align: center; }
+.back-btn { justify-self: start; display: inline-flex; align-items: center; gap: 6px; color: #3d8bff; font-weight: 700; font-size: 16px; padding: 6px 4px; }
+.back-count { background: #3d8bff; color: #fff; border-radius: 99px; font-size: 11px; font-weight: 800; padding: 1px 7px; min-width: 18px; text-align: center; }

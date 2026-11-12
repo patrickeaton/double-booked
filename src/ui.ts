@@ -534,8 +534,13 @@ function renderMail() {
   const open = S.messages.find((m) => m.id === S.openMail);
   if (open) {
     open.read = true;
+    const unread = mails.filter((m) => !m.read).length;
     return h('div', { class: 'app mail' },
-      head('Mail', undefined, h('button', { class: 'btn ghost', onclick: () => { S.openMail = null; dirty(); } }, '‹ Inbox')),
+      h('header', { class: 'app-head back-head' },
+        h('button', { class: 'back-btn', onclick: () => { S.openMail = null; dirty(); } }, '‹ Inbox', unread > 0 && h('span', { class: 'back-count' }, unread)),
+        h('h2', {}, 'Mail'),
+        h('span', {}),
+      ),
       h('div', { class: 'scroll', 'data-keep': `mail-${open.id}` },
         h('article', { class: 'mail-open' },
           h('div', { class: 'mail-from' }, h('span', { class: 'avatar-dot', style: `background:${avatarColor(open.from)}` }, open.from[0]), h('div', {}, h('b', {}, open.from), h('div', { class: 'muted small' }, fmt(open.at)))),
