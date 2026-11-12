@@ -63,6 +63,8 @@ export interface GameState {
   savedDrinks: string[];
   /** Past Day 14: generated days, no ending. */
   endless: boolean;
+  /** Long haul: the story over four weeks. */
+  long: boolean;
   /** Kendall's track record (for the review and the ending). */
   kendall: { helped: number; sabotaged: number };
   /** Calendar layout: column order and hidden calendars. */
@@ -110,6 +112,7 @@ export const S: GameState = {
   seed: 1,
   savedDrinks: [],
   endless: false,
+  long: false,
   kendall: { helped: 0, sabotaged: 0 },
   calPrefs: readCalPrefs(),
   toasts: [],
@@ -268,11 +271,11 @@ export function saveCalPrefs() {
 
 // ───────────── save / load ─────────────
 const KEY = 'double-booked-save-v1';
-export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[]; shortcuts?: Shortcut[]; seed?: number; endless?: boolean; savedDrinks?: string[]; messages?: Message[]; kendall?: { helped: number; sabotaged: number }; future?: Record<number, CalEvent[]>; past?: Record<number, CalEvent[]>; tickets?: Ticket[]; rel?: Record<string, number> }
+export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[]; shortcuts?: Shortcut[]; seed?: number; endless?: boolean; long?: boolean; savedDrinks?: string[]; messages?: Message[]; kendall?: { helped: number; sabotaged: number }; future?: Record<number, CalEvent[]>; past?: Record<number, CalEvent[]>; tickets?: Ticket[]; rel?: Record<string, number> }
 
 export function writeSave() {
   try {
-    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming, shortcuts: S.shortcuts, seed: S.seed, endless: S.endless, savedDrinks: S.savedDrinks, messages: S.messages, kendall: S.kendall, future: S.future, past: S.past, tickets: S.tickets, rel: S.rel };
+    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming, shortcuts: S.shortcuts, seed: S.seed, endless: S.endless, long: S.long, savedDrinks: S.savedDrinks, messages: S.messages, kendall: S.kendall, future: S.future, past: S.past, tickets: S.tickets, rel: S.rel };
     localStorage.setItem(KEY, JSON.stringify(s));
   } catch {
     /* storage may be unavailable */

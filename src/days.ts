@@ -959,14 +959,98 @@ export const DAYS: DayDef[] = [
 const WEEK = ['Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue'];
 const endlessCache = new Map<number, DayDef>();
 
+// ───────────────────────────── long haul (4 weeks) ─────────────────────────────
+// The same story, spread over four weeks. Story days keep their weekdays (the story says "Friday"
+// a lot), so the gaps are whole weeks of ordinary days: one after the first Friday, one after the
+// second Tuesday. Every week is busier than the last.
+let LONG = false;
+export const setLongMode = (v: boolean) => { LONG = v; longCache.clear(); };
+export const isLongMode = () => LONG;
+/** Long-haul day index → story day index (or -1 for an ordinary day). */
+const LONG_MAP = [0, 1, 2, -1, -1, -1, -1, -1, -1, -1, 3, 4, 5, 6, -1, -1, -1, -1, -1, -1, -1, 7, 8, 9, 10, 11, 12, 13];
+export const LONG_DAYS = LONG_MAP.length;
+/** How many days the run lasts before the verdict. */
+export const totalDays = () => (LONG ? LONG_DAYS : DAYS.length);
+/** The last story day reached by day i: story beats and unlocks key off this, not the raw day count. */
+export function storyIdx(i: number): number {
+  if (!LONG) return i;
+  if (i >= LONG_DAYS) return DAYS.length - 1 + (i - LONG_DAYS + 1);
+  for (let k = Math.min(i, LONG_DAYS - 1); k >= 0; k--) if (LONG_MAP[k] >= 0) return LONG_MAP[k];
+  return 0;
+}
+/** Which week of the run (0-based): long haul gets busier every week. */
+const weekOf = (i: number) => Math.floor(i / 7);
+const longCache = new Map<number, DayDef>();
+const FILLER_MEMOS = [
+  { subject: 'Just a normal day', body: 'Nothing special on the books today. Which, historically, means something special is about to happen.' },
+  { subject: 'Ordinary {wd}', body: "An ordinary {wd}. Margo's calendar has never had one of those, but we live in hope. 💐" },
+  { subject: 'Reminder', body: 'Gentle reminder that probation is still happening. Every day counts. No pressure! (Some pressure.)' },
+  { subject: '{wd} check-in', body: "How are you holding up? Don't answer that. Here's your calendar." },
+  { subject: 'Busy one', body: "Word is today will be \"a lot\". I don't know whose word. Probably Margo's." },
+];
+
+function fillerDay(i: number): DayDef {
+  const hit = longCache.get(i);
+  if (hit) return hit;
+  const ctx = DAYS[storyIdx(i)];
+  // The most recent workday in the story sets the rules and who's around.
+  let w = storyIdx(i);
+  while (w > 0 && DAYS[w].weekend) w--;
+  const work = DAYS[w];
+  const weekday = WEEK[i % 7];
+  const weekend = weekday === 'Sat' || weekday === 'Sun';
+  const tag = `l${i}`;
+  const execs = work.execs;
+  const bosses = execs.filter((x) => x !== 'me' && x !== 'team');
+  const memo = FILLER_MEMOS[i % FILLER_MEMOS.length];
+  const d: DayDef = weekend
+    ? {
+        title: `${weekday === 'Sat' ? 'Saturday' : 'Sunday'}, week ${weekOf(i) + 1}`, weekday, weekend: true, adhoc: 2 + weekOf(i), apps: [],
+        subtitle: 'A weekend. Your phone disagrees.',
+        memo: weekendMemo(weekday === 'Sat' ? "It's Saturday" : "It's Sunday", 'Book some plans. Rest. Work pings raise standing and cost calm. Four weeks is a long time: pace yourself.'),
+        execs: [...bosses, 'me'], rules: [], events: [], script: [],
+      }
+    : {
+        title: `An ordinary ${weekday}`, weekday, adhoc: Math.min(5 + 2 * weekOf(i) + (i % 2), 12), apps: [],
+        subtitle: weekOf(i) >= 2 ? 'Week ' + (weekOf(i) + 1) + '. It does not get quieter.' : 'No big story today. Just the job.',
+        memo: { from: 'Bev (People Ops)', subject: memo.subject.replace('{wd}', weekday), body: memo.body.replace('{wd}', weekday) },
+        execs, rules: work.rules,
+        events: [
+          standup(tag, execs.filter((x) => x !== 'me' || execs.length > 1)),
+          ...(bosses.includes('theo') && work.rules.includes('theoFocus') ? [focus(tag)] : []),
+          ...(bosses.includes('margo') ? [mlunch(tag)] : []),
+          ...(bosses.includes('theo') ? [tlunch(tag)] : []),
+          ...(execs.includes('me') ? [myLunch(tag)] : []),
+        ],
+        // Four weeks of payroll needs some money coming in: customers pay on the odd Monday and Thursday.
+        script: weekday === 'Mon' || weekday === 'Thu'
+          ? [{ at: t('10:30'), type: 'effects', effects: { runway: weekday === 'Mon' ? 9000 : 6000 }, log: 'A customer invoice cleared.', msg: { app: 'mail', from: 'Dev (Finance)', subject: 'Money in! 💸', body: weekday === 'Mon' ? 'GreenThumb Garden Centres paid their annual plan: $9k. I have printed the remittance and stuck it to the fridge.' : 'A batch of renewals came in: $6k. Runway says thank you.' } }]
+          : [],
+      };
+  void ctx;
+  longCache.set(i, d);
+  return d;
+}
+
 /** Story days first, then generated days forever (pure ad-hoc, slowly getting busier). */
 export function dayAt(i: number): DayDef {
-  if (i < DAYS.length) return DAYS[i];
-  const hit = endlessCache.get(i);
+  if (LONG && i < LONG_DAYS) {
+    const k = LONG_MAP[i];
+    if (k < 0) return fillerDay(i);
+    // Story days in the long haul pick up extra noise as the weeks go on.
+    const hit = longCache.get(i);
+    if (hit) return hit;
+    const d = { ...DAYS[k], adhoc: DAYS[k].adhoc + 2 * weekOf(i) };
+    longCache.set(i, d);
+    return d;
+  }
+  const base = totalDays();
+  if (i < base) return DAYS[i];
+  const hit = endlessCache.get(i + (LONG ? 1000 : 0));
   if (hit) return hit;
   const weekday = WEEK[i % 7];
   const weekend = weekday === 'Sat' || weekday === 'Sun';
-  const n = i - DAYS.length + 1;
+  const n = i - base + 1;
   const tag = `e${i}`;
   const d: DayDef = weekend
     ? {
@@ -981,6 +1065,6 @@ export function dayAt(i: number): DayDef {
         memo: { from: 'Bev (People Ops)', subject: `${weekday}: another one`, body: n === 1 ? "Welcome to endless mode! It's just like probation, except it never stops and it gets busier every couple of days. 💐" : 'Another day, another calendar. How long can you last?' },
         execs: ALL, rules: WEEK2_RULES, events: [teamStandup(tag, ALL), focus(tag), mlunch(tag), tlunch(tag), myLunch(tag)], script: [],
       };
-  endlessCache.set(i, d);
+  endlessCache.set(i + (LONG ? 1000 : 0), d);
   return d;
 }

@@ -1,6 +1,7 @@
 // The ad-hoc pool: small requests, errands and dilemmas drawn at random each day,
 // on top of the day's hand-written story beats. Seeded, so retrying a day replays the same draw.
 import { TABLE_TIMES, fmt, isBoss, t } from './data';
+import { storyIdx } from './days';
 import type { AppId, Choice, DayDef, Effects, EventDef, ExecId, InboxApp, Script } from './types';
 
 type Rng = () => number;
@@ -375,7 +376,7 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
   const kinds: [string, number][] = [
     ['meeting', 4], ['dilemma', 3], ['call', 1], ['self', 1], ...(d.weekend ? [] : [['later', 1.6] as [string, number]]),
     ...(d.execs.includes('me') ? [['errand', 1.2] as [string, number], ['mywork', 1.5] as [string, number]] : []),
-    ...(d.execs.includes('margo') && dayIndex >= 2 ? [['advice', 1.5] as [string, number]] : []),
+    ...(d.execs.includes('margo') && storyIdx(dayIndex) >= 2 ? [['advice', 1.5] as [string, number]] : []),
     ...(has('brew') ? [['coffee', 1] as [string, number]] : []),
     ...(has('bundl') ? [['gift', 1] as [string, number]] : []),
     ...(has('tably') ? [['table', 1] as [string, number]] : []),
@@ -642,7 +643,7 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
     }
   }
   // Kendall (from Day 8): mostly helpful, sometimes not.
-  if (dayIndex >= 7) {
+  if (storyIdx(dayIndex) >= 7) {
     const k = 2 + (r() < 0.5 ? 1 : 0);
     for (let i = 0; i < k; i++) {
       out.push({ at: t('9:40') + Math.floor(r() * (t('16:00') - t('9:40'))), type: 'kendall', mode: r() < (morale < 35 ? 0.5 : morale >= 70 ? 0.15 : 0.3) ? 'sabotage' : 'help' });

@@ -1,4 +1,4 @@
-import { DAYS, dayAt } from './days';
+import { DAYS, dayAt, setLongMode, storyIdx, totalDays } from './days';
 import { drinkEmoji, drinkMatch, drinkName, drinkPrice } from './drinks';
 import { CAL_START, DAY_END, DAY_START, EXECS, PAYROLL, PREP_TIME, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, fmt, t } from './data';
 import {
@@ -33,8 +33,8 @@ export interface MeterEffect { text: string; good: boolean }
 /** Only what's actually affecting you right now (nothing about systems you haven't met yet). */
 export function meterEffects(): Record<'standing' | 'runway' | 'morale' | 'stress', MeterEffect[]> {
   const m = S.meters;
-  const kendallHere = S.dayIndex >= 7;
-  const adviceHere = S.dayIndex >= 2;
+  const kendallHere = storyIdx(S.dayIndex) >= 7;
+  const adviceHere = storyIdx(S.dayIndex) >= 2;
   const trust = 0.25 + (relOf('margo') - 40) / 100;
   const trustLine: MeterEffect =
     trust >= 0.65 ? { text: 'Margo trusts you. She usually takes your advice.', good: true }
@@ -70,7 +70,7 @@ export function meterEffects(): Record<'standing' | 'runway' | 'morale' | 'stres
 }
 /** Today's calendars, minus anyone who has left (e.g. Dana after the board vote). */
 export const activeExecs = (): ExecId[] => day().execs.filter((x) => !S.flags.includes(`gone-${x}`));
-export const unlockedApps = (): AppId[] => DAYS.slice(0, S.dayIndex + 1).flatMap((d) => d.apps);
+export const unlockedApps = (): AppId[] => DAYS.slice(0, storyIdx(S.dayIndex) + 1).flatMap((d) => d.apps);
 export const hasApp = (a: AppId) => unlockedApps().includes(a);
 export const isNewApp = (a: AppId) => S.dayIndex > 0 && day().apps.includes(a);
 export const findEvent = (id: string | null) => S.events.find((e) => e.id === id);
@@ -127,8 +127,10 @@ function occupying(o: CalEvent, now: number): boolean {
 
 // ───────────────────────────── game flow ─────────────────────────────
 
-export function newGame() {
+export function newGame(long = false) {
   clearSave();
+  S.long = long === true;
+  setLongMode(S.long);
   S.meters = { ...START_METERS };
   S.strikes = 0;
   S.strikeNotes = [];
@@ -161,6 +163,8 @@ export function continueGame() {
   S.shortcuts = (save.shortcuts ?? []).filter((s) => (s.kind as string) !== 'rides');
   S.seed = save.seed ?? 1;
   S.endless = save.endless ?? false;
+  S.long = save.long ?? false;
+  setLongMode(S.long);
   S.savedDrinks = save.savedDrinks ?? [];
   S.messages = save.messages ?? [];
   S.kendall = save.kendall ?? { helped: 0, sabotaged: 0 };
@@ -206,7 +210,7 @@ export function setupDay(i: number) {
   const mine = d.weekend ? weekendPlans(i, S.seed) : d.execs.includes('me') ? weekdayBreathers(i, S.seed) : [];
   S.events.push(...mine.map((e) => ({ ...e, baseDuration: e.duration, status: 'pending' as const })));
   // Saves from before Theo's exit set the flag: if he resigned and his last day has passed, he's gone.
-  if (S.flags.includes('theo-leaves') && i >= 13 && !S.flags.includes('gone-theo')) S.flags.push('gone-theo');
+  if (S.flags.includes('theo-leaves') && storyIdx(i) >= 13 && !S.flags.includes('gone-theo')) S.flags.push('gone-theo');
   const gone = (['margo', 'theo', 'dana'] as ExecId[]).filter((x) => S.flags.includes(`gone-${x}`));
   if (gone.length) {
     S.events = S.events
@@ -218,7 +222,7 @@ export function setupDay(i: number) {
   if (hasApp('trellis') && !d.weekend) {
     const fresh = ticketsFor(i, S.seed, d.execs.filter((x) => x !== 'team' && !S.flags.includes(`gone-${x}`)), S.tickets.map((t) => t.title), S.tickets.some((t) => t.day < i) ? 2 : 3)
       .filter((t) => !S.tickets.some((o) => o.id === t.id))
-      .map((t) => (!S.endless && i < DAYS.length ? { ...t, dueDay: Math.min(t.dueDay, DAYS.length - 1) } : t));
+      .map((t) => (!S.endless && i < totalDays() ? { ...t, dueDay: Math.min(t.dueDay, totalDays() - 1) } : t));
     S.tickets.push(...fresh);
   }
   S.carry = [];
@@ -423,7 +427,7 @@ function fire(s: Script) {
       break;
     case 'request': {
       S.events.push({ ...s.event, from: s.event.from ?? s.msg?.from, baseDuration: s.event.duration, status: 'pending', fresh: true });
-      if (s.event.dueDay !== undefined && !S.endless && S.dayIndex < DAYS.length) S.events[S.events.length - 1].dueDay = Math.min(s.event.dueDay, DAYS.length - 1);
+      if (s.event.dueDay !== undefined && !S.endless && S.dayIndex < totalDays()) S.events[S.events.length - 1].dueDay = Math.min(s.event.dueDay, totalDays() - 1);
       if (s.msg) addMessage(s.msg);
       banner('calendar', '📥 New request', s.event.title);
       if (s.event.travel) offerShortcut({ kind: 'ride' });
@@ -637,7 +641,7 @@ function finishEventRaw(e: CalEvent) {
 export const canResize = (e: CalEvent) => !e.departed && !e.fixed && e.kind !== 'focus' && (e.status === 'pending' || e.status === 'scheduled');
 export const canWrap = (e: CalEvent) => !e.fixed && e.kind !== 'focus' && e.status === 'running';
 export const canBump = (e: CalEvent) =>
-  !e.departed && !e.fixed && !e.noBump && e.kind !== 'personal' && (e.status === 'pending' || e.status === 'scheduled') && (S.endless || S.dayIndex + 1 < DAYS.length);
+  !e.departed && !e.fixed && !e.noBump && e.kind !== 'personal' && (e.status === 'pending' || e.status === 'scheduled') && (S.endless || S.dayIndex + 1 < totalDays());
 
 export function resizeEvent(id: string, delta: number) {
   const e = findEvent(id);
@@ -769,7 +773,7 @@ export function nextWorkday(i: number) {
   return i;
 }
 /** Furthest day you can see/book ahead. */
-export const lastViewDay = () => (S.endless || S.dayIndex >= DAYS.length ? S.dayIndex + 7 : Math.min(S.dayIndex + 7, DAYS.length - 1));
+export const lastViewDay = () => (S.endless || S.dayIndex >= totalDays() ? S.dayIndex + 7 : Math.min(S.dayIndex + 7, totalDays() - 1));
 
 export function findFuture(id: string | null): { e: CalEvent; day: number } | null {
   if (!id) return null;
@@ -1789,7 +1793,7 @@ export function nextDay() {
   }
   S.incoming = S.carry;
   S.carry = [];
-  if (S.dayIndex + 1 >= DAYS.length && !S.endless) {
+  if (S.dayIndex + 1 >= totalDays() && !S.endless) {
     S.phase = 'end';
     writeSave();
     dirty();
@@ -1799,11 +1803,16 @@ export function nextDay() {
 }
 
 /** Straight into endless mode from the title screen: every app, no story. */
+/** The story over four weeks: more ordinary days, busier every week. */
+export function newLong() {
+  newGame(true);
+}
+
 export function newEndless() {
   newGame();
   S.endless = true;
   S.messages = [];
-  setupDay(DAYS.length);
+  setupDay(totalDays());
 }
 
 /** After the final review: keep going. */

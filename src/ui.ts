@@ -1,9 +1,9 @@
-import { DAYS, dayAt } from './days';
+import { DAYS, dayAt, totalDays } from './days';
 import { STEP_LABEL, drinkEmoji, drinkName, drinkPrice, optionsFor, specString, stepsFor, type DrinkSpec, type Step } from './drinks';
 import { CAL_END, CAL_START, DAY_END, DAY_START, EXECS, isBoss, PAYROLL, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, TABLE_TIMES, fmt } from './data';
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
-  minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, resume, clockGlide, friendlyReplies, replyFriendly, coffeeRun, teamLunch, treatedToday, canTreat, TREAT_COST, TEAM_SIZE, LUNCH_TIMES, derivedTodos, doPromise, payInvoice, canCater,
+  minStart, newGame, newLong, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, resume, clockGlide, friendlyReplies, replyFriendly, coffeeRun, teamLunch, treatedToday, canTreat, TREAT_COST, TEAM_SIZE, LUNCH_TIMES, derivedTodos, doPromise, payInvoice, canCater,
   toggleSpeed, scheduleAllTickets, bookAllRequests, unschedule, whereOf, atOffice, placeLabel, padBefore, padAfter, canBuffer, setBuffer, scheduleTicket, ticketBlock, toggleAttendee, canEditAttendees, skippedFrom, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
 } from './engine';
 import { avatarEl } from './avatars';
@@ -234,8 +234,8 @@ function dayAtLabel(i: number) {
 function dayLabel(short = false) {
   const d = day();
   const n = S.dayIndex + 1;
-  if (S.dayIndex >= DAYS.length) return short ? `${d.weekday} · Day ${n}` : `${d.weekday} · Endless · Day ${n}`;
-  return short ? `${d.weekday} · ${n}/${DAYS.length}` : `${d.weekday} · Day ${n} of ${DAYS.length}`;
+  if (S.dayIndex >= totalDays()) return short ? `${d.weekday} · Day ${n}` : `${d.weekday} · Endless · Day ${n}`;
+  return short ? `${d.weekday} · ${n}/${totalDays()}` : `${d.weekday} · Day ${n} of ${totalDays()}`;
 }
 
 function renderStatus() {
@@ -243,7 +243,7 @@ function renderStatus() {
   const label = S.phase === 'prep' ? '' : S.phase === 'day' ? (S.paused ? 'Paused while you were away' : day().weekend ? 'Weekend 🌴' : 'Workday') : '';
   return h('div', { class: 'status-inner' },
     h('span', { class: 'status-left' }, label),
-    h('span', { class: 'status-center' }, h('b', {}, `${dateFor(S.dayIndex)} · ${time}`), h('small', {}, S.dayIndex < DAYS.length ? `Day ${S.dayIndex + 1} of ${DAYS.length}` : `Endless · Day ${S.dayIndex + 1}`)),
+    h('span', { class: 'status-center' }, h('b', {}, `${dateFor(S.dayIndex)} · ${time}`), h('small', {}, S.dayIndex < totalDays() ? `Day ${S.dayIndex + 1} of ${totalDays()}` : `Endless · Day ${S.dayIndex + 1}`)),
     h('span', { class: 'status-right' },
       S.phase === 'prep' && (() => {
         const n = S.events.filter((e) => e.status === 'pending' && !e.optional).length;
@@ -1578,10 +1578,12 @@ function renderTitle() {
     h('h1', {}, 'Double Booked'),
     h('p', { class: 'tagline' }, `${DAYS.length} days of probation. Weekends included. Zero right answers.`),
     h('div', { class: 'stack' },
-      save && save.dayIndex > 0 && h('button', { class: 'btn primary big', onclick: continueGame }, `Continue · ${save.endless ? 'Endless ' : ''}Day ${save.dayIndex + 1}`),
-      h('button', { class: `btn ${save && save.dayIndex > 0 ? '' : 'primary'} big`, onclick: newGame }, 'New game'),
+      save && save.dayIndex > 0 && h('button', { class: 'btn primary big', onclick: continueGame }, `Continue · ${save.endless ? 'Endless ' : save.long ? 'Long haul ' : ''}Day ${save.dayIndex + 1}`),
+      h('button', { class: `btn ${save && save.dayIndex > 0 ? '' : 'primary'} big`, onclick: () => newGame() }, 'New game · 2 weeks'),
+      h('button', { class: 'btn big', onclick: newLong }, '🗓️ Long haul · 4 weeks'),
       h('button', { class: 'btn big', onclick: newEndless }, '♾️ Endless mode'),
     ),
+    h('p', { class: 'muted small' }, 'Long haul: the same story spread over 4 weeks, with ordinary days between. Harder, and busier every week.'),
     h('p', { class: 'muted small' }, 'Endless: every app, no story, a new random day forever.'),
   );
 }
@@ -1627,7 +1629,7 @@ function renderReview() {
     return h('div', { class: 'delta-row' }, h('span', {}, METER_ICON[m], ' ', METER_LABEL[m]),
       h('b', { class: v === 0 ? '' : isGood(m, v) ? 'pos' : 'neg' }, v === 0 ? '—' : fmtEffect(m, v).replace(` ${METER_LABEL[m]}`, '')));
   };
-  const last = S.dayIndex + 1 >= DAYS.length && !S.endless;
+  const last = S.dayIndex + 1 >= totalDays() && !S.endless;
   const wk = day().weekend;
   return h('div', { class: 'card-screen review framed' },
     h('div', { class: 'cs-head' },
@@ -1667,7 +1669,7 @@ function renderOver() {
     h('p', { class: 'muted small' }, S.endless ? `You lasted until Day ${S.dayIndex + 1}.` : `${dayLabel()}.`),
     h('div', { class: 'stack' },
       h('button', { class: 'btn primary big', onclick: retryDay }, `Retry Day ${S.dayIndex + 1}`),
-      h('button', { class: 'btn big', onclick: newGame }, 'Start over'),
+      h('button', { class: 'btn big', onclick: () => newGame(S.long) }, 'Start over'),
     ),
   );
 }
@@ -1718,7 +1720,7 @@ function renderEnd() {
     ),
     h('div', { class: 'cs-foot stack' },
       !fired && h('button', { class: 'btn primary big', onclick: continueEndless }, '♾️ Keep going (endless)'),
-      h('button', { class: `btn ${fired ? 'primary' : ''} big`, onclick: newGame }, 'Play again'),
+      h('button', { class: `btn ${fired ? 'primary' : ''} big`, onclick: () => newGame(S.long) }, 'Play again'),
     ),
   );
 }
