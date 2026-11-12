@@ -317,15 +317,43 @@ function badgeFor(app: AppId): number {
   return 0;
 }
 
+/** The apps you live in. Everything else sits behind a divider (tablet) or in a More menu (phone). */
+const CORE_APPS: AppId[] = ['calendar', 'mail', 'huddle', 'messages', 'notes'];
+let moreOpen = false;
+let moreBorn = 0;
+
 function renderDock(isSplit: boolean) {
-  return APPS.filter((a) => hasApp(a.id) && !(isSplit && a.id === 'calendar')).map((a) => {
+  const all = APPS.filter((a) => hasApp(a.id) && !(isSplit && a.id === 'calendar'));
+  const core = CORE_APPS.flatMap((id) => all.filter((a) => a.id === id));
+  const extra = all.filter((a) => !CORE_APPS.includes(a.id));
+  const icon = (a: (typeof APPS)[number], close = false) => {
     const n = badgeFor(a.id);
-    return h('button', { class: `dock-app ${S.app === a.id ? 'active' : ''}`, onclick: () => { if (layout === 'cal') layout = 'split'; openApp(a.id); } },
+    return h('button', { class: `dock-app ${S.app === a.id ? 'active' : ''}`, onclick: () => { if (close) moreOpen = false; if (layout === 'cal') layout = 'split'; openApp(a.id); } },
       h('span', { class: 'app-icon', style: `background:${a.color}` }, a.icon,
         n > 0 ? h('span', { class: 'badge' }, n) : isNewApp(a.id) ? h('span', { class: 'badge new' }, 'NEW') : null),
       h('span', { class: 'app-name' }, a.name),
     );
-  });
+  };
+  if (!extra.length) { moreOpen = false; return core.map((a) => icon(a)); }
+  if (isSplit) {
+    moreOpen = false;
+    return [...core.map((a) => icon(a)), h('span', { class: 'dock-divider' }), ...extra.map((a) => icon(a))];
+  }
+  // Phone: the rest live behind More, which carries their badges.
+  const n = extra.reduce((t, a) => t + badgeFor(a.id), 0);
+  const fresh = extra.some((a) => isNewApp(a.id));
+  const inside = extra.find((a) => a.id === S.app);
+  const more = h('button', { class: `dock-app more ${inside || moreOpen ? 'active' : ''}`, onclick: () => { moreOpen = !moreOpen; moreBorn = performance.now(); dirty(); } },
+    h('span', { class: 'app-icon more-icon', style: inside ? `background:${inside.color}` : '' }, inside ? inside.icon : moreOpen ? '✕' : '•••',
+      n > 0 ? h('span', { class: 'badge' }, n) : fresh ? h('span', { class: 'badge new' }, 'NEW') : null),
+    h('span', { class: 'app-name' }, inside ? inside.name : 'More'),
+  );
+  const delay = `animation-delay:${moreBorn - performance.now()}ms`;
+  const menu = moreOpen && [
+    h('div', { class: 'more-backdrop', style: delay, onclick: () => { moreOpen = false; dirty(); } }),
+    h('div', { class: 'more-menu', style: delay }, ...extra.map((a) => icon(a, true))),
+  ];
+  return [...core.map((a) => icon(a)), more, ...(menu || [])];
 }
 
 // ───────────────────────────── calendar ─────────────────────────────

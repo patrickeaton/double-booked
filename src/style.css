@@ -537,3 +537,17 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .pickbar { flex: none; margin: 0 10px 6px; background: var(--ink); color: #fff; border-radius: 12px; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .pickbar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pickbar .btn { padding: 5px 10px; font-size: 12px; background: rgba(255, 255, 255, 0.16); color: #fff; }
+
+/* Dock: core apps, then a divider (tablet) or a More menu (phone) */
+.dock { position: relative; }
+.dock-divider { flex: none; width: 2px; align-self: stretch; margin: 4px 0 14px; background: var(--line); border-radius: 2px; }
+.more-icon { background: #ece8de; color: var(--ink); font-size: 15px; font-weight: 900; letter-spacing: 1px; }
+.more-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(20, 24, 43, 0.25); animation: fade 0.18s ease-out; }
+.more-menu { position: absolute; z-index: 41; right: 10px; bottom: calc(100% + 6px); background: var(--card); border-radius: 18px; padding: 12px 8px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25); display: grid; grid-template-columns: repeat(4, 64px); gap: 12px 4px; animation: pop-up 0.18s ease-out; transform-origin: bottom right; }
+.more-menu .dock-app { margin: 0 !important; min-width: 0; }
+.more-menu .app-name { display: block; }
+@keyframes pop-up { from { opacity: 0; transform: translateY(10px) scale(0.96); } }
+@media (max-width: 819px) {
+  .dock { overflow: visible; justify-content: space-around; }
+  .dock-app:first-child, .dock-app:last-child { margin: 0; }
+}
