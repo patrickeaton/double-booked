@@ -187,11 +187,15 @@ function dayLabel(short = false) {
 
 function renderStatus() {
   const time = S.phase === 'prep' || S.phase === 'memo' ? fmt(S.now) : S.phase === 'day' ? fmt(S.now) : '—';
-  const label = S.phase === 'prep' ? 'Morning prep' : S.phase === 'day' ? (S.paused ? 'Paused' : day().weekend ? 'Weekend 🌴' : 'Workday') : '';
+  const label = S.phase === 'prep' ? '' : S.phase === 'day' ? (S.paused ? 'Paused' : day().weekend ? 'Weekend 🌴' : 'Workday') : '';
   return h('div', { class: 'status-inner' },
     h('span', { class: 'status-left' }, label),
     h('span', { class: 'status-center' }, h('b', {}, `${dateFor(S.dayIndex)} · ${time}`), h('small', {}, S.dayIndex < DAYS.length ? `Day ${S.dayIndex + 1} of ${DAYS.length}` : `Endless · Day ${S.dayIndex + 1}`)),
     h('span', { class: 'status-right' },
+      S.phase === 'prep' && (() => {
+        const n = S.events.filter((e) => e.status === 'pending').length;
+        return h('button', { class: 'start-btn', onclick: startDay, title: n ? `${n} requests still unbooked` : 'Start the day' }, 'Start day', n > 0 && h('span', { class: 'start-count' }, n), ' →');
+      })(),
       S.phase === 'day' && h('button', { class: 'chip-btn', onclick: toggleSpeed, title: 'Speed' }, `${S.speed}×`),
       S.phase === 'day' && h('button', { class: 'chip-btn', onclick: togglePause, title: 'Pause' }, S.paused ? '▶' : '⏸'),
     ),
@@ -291,7 +295,7 @@ function renderCalendar() {
   const header = h('header', { class: 'app-head' },
     h('h2', {}, 'Calendar'),
     S.phase === 'prep'
-      ? h('button', { class: 'btn primary', onclick: startDay }, pending.length ? `Start day (${pending.length} unbooked) →` : 'Start day →')
+      ? h('span', { class: 'muted' }, 'Before 9am. Plan the day.')
       : h('span', { class: 'muted' }, S.phase === 'day' ? (d.weekend ? '🌴 Weekend. Technically.' : `${fmt(S.now)} · ends ${fmt(DAY_END)}`) : ''),
   );
 
@@ -1073,7 +1077,7 @@ function renderMemo() {
     d.rules.length > 0 && h('div', { class: 'rules' }, h('h4', {}, "Today's rules"), ...d.rules.map((r) => h('div', { class: 'rule' }, '📌 ', RULES[r].text))),
     ),
     h('div', { class: 'cs-foot' },
-      h('button', { class: 'btn primary big', onclick: startPrep }, d.weekend ? 'Start the weekend 🌴' : 'Start morning prep ☕'),
+      h('button', { class: 'btn primary big', onclick: startPrep }, d.weekend ? 'Start the weekend 🌴' : "Let's go →"),
     ),
   );
 }

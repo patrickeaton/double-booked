@@ -482,3 +482,6 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .lockbar small { opacity: 0.75; }
 .lockbar .btn { background: #ffd166; color: var(--ink); flex: none; }
 .cal.locked .tray, .cal.locked .cal-grid { pointer-events: none; opacity: 0.55; filter: grayscale(0.4); }
+
+.start-btn { background: var(--ink); color: #fff; border-radius: 99px; padding: 5px 11px; font-size: 12px; font-weight: 800; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.start-count { background: #ffd166; color: var(--ink); border-radius: 99px; font-size: 10px; padding: 0 6px; min-width: 16px; text-align: center; }
