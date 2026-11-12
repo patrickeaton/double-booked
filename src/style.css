@@ -655,3 +655,21 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .d-val { min-width: 0; font-size: 15px; padding: 0 2px; }
 .d-val small { font-size: 11px; color: var(--muted); margin-left: 1px; }
 .d-ctl { column-gap: 5px; }
+
+/* ───────── Trellis ───────── */
+.trellis .seg { margin: 4px 0 8px; }
+.trellis-tip { margin: 0 0 10px; line-height: 1.4; }
+.ticket { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 10px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 8px; }
+.ticket.urgent { border-color: #ffb4a8; box-shadow: inset 3px 0 0 #e5484d; }
+.ticket.st-done, .ticket.st-late { opacity: 0.7; }
+.ticket-top { display: flex; gap: 10px; align-items: flex-start; }
+.ticket-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 14px; line-height: 1.3; }
+.ticket-bar { height: 5px; background: #eee9de; border-radius: 99px; overflow: hidden; }
+.ticket-bar span { display: block; height: 100%; background: #0f9d7a; border-radius: 99px; }
+.ticket-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.ticket-due { font-size: 12px; font-weight: 700; color: var(--muted); }
+.ticket-due.bad { color: #b42318; }
+.small-btn { padding: 6px 10px; font-size: 12px; }
+/* work blocks on the calendar */
+.evt.k-work { background: color-mix(in srgb, var(--c) 10%, white); border: 1.5px dashed color-mix(in srgb, var(--c) 70%, white); box-shadow: none; }
+.evt.k-work .evt-title { color: color-mix(in srgb, var(--c) 55%, #1d2033); }

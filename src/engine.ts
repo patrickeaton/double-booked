@@ -6,6 +6,7 @@ import {
 } from './state';
 import { offerShortcut } from './shortcuts';
 import { generateAdhoc } from './adhoc';
+import { ticketsFor } from './tickets';
 import type { AppId, CalEvent, Effects, ExecId, Message, MsgDef, Script } from './types';
 
 export const day = () => dayAt(S.dayIndex);
@@ -71,7 +72,10 @@ const end = (e: CalEvent) => (e.start ?? 0) + e.duration;
 const overlaps = (a0: number, a1: number, b0: number, b1: number) => a0 < b1 && b0 < a1;
 const shares = (a: CalEvent, b: CalEvent) => a.attendees.some((x) => b.attendees.includes(x));
 const active = (e: CalEvent) => e.status === 'scheduled' || e.status === 'running';
-const blocks = (e: CalEvent) => e.kind !== 'focus';
+/** Focus time and work blocks don't make anyone "busy": meetings can land on top of them (and interrupt). */
+const blocks = (e: CalEvent) => e.kind !== 'focus' && e.kind !== 'work';
+/** Meeting rules only apply to meetings. */
+const ruled = (e: CalEvent) => !e.fixed && e.kind !== 'work';
 export const travelOf = (e: CalEvent) => (e.travel && !e.remote ? e.travel : 0);
 const occStart = (e: CalEvent) => (e.start ?? 0) - travelOf(e);
 const occEnd = (e: CalEvent) => end(e) + travelOf(e);
@@ -100,6 +104,7 @@ export function newGame() {
   S.carry = [];
   S.future = {};
   S.past = {};
+  S.tickets = [];
   S.messages = [];
   S.kendall = { helped: 0, sabotaged: 0 };
   S.shortcuts = [];
@@ -126,6 +131,7 @@ export function continueGame() {
   S.kendall = save.kendall ?? { helped: 0, sabotaged: 0 };
   S.future = save.future ?? {};
   S.past = save.past ?? {};
+  S.tickets = save.tickets ?? [];
   S.carry = [];
   setupDay(save.dayIndex);
 }
@@ -160,6 +166,12 @@ export function setupDay(i: number) {
   S.events.push(...S.incoming.map((e) => ({ ...e })));
   S.events.push(...(S.future[i] ?? []).map((e) => ({ ...e, status: 'scheduled' as const, fresh: false })));
   delete S.future[i];
+  if (hasApp('trellis') && !d.weekend) {
+    const fresh = ticketsFor(i, S.seed, d.execs.filter((x) => x !== 'team' && !S.flags.includes(`gone-${x}`)), S.tickets.map((t) => t.title), S.tickets.some((t) => t.day < i) ? 2 : 3)
+      .filter((t) => !S.tickets.some((o) => o.id === t.id))
+      .map((t) => (!S.endless && i < DAYS.length ? { ...t, dueDay: Math.min(t.dueDay, DAYS.length - 1) } : t));
+    S.tickets.push(...fresh);
+  }
   S.carry = [];
   S.tasks = [];
   S.orders = [];
@@ -428,7 +440,7 @@ function fire(s: Script) {
 const execNames = (ids: ExecId[]) => ids.map((i) => EXECS[i].short).join(' & ');
 
 function startEvent(e: CalEvent) {
-  if (e.kind === 'focus') {
+  if (e.kind === 'focus' || e.kind === 'work') {
     e.status = 'running';
     return;
   }
@@ -454,7 +466,7 @@ function startEvent(e: CalEvent) {
 
   for (const id of day().rules) {
     const r = RULES[id];
-    if (!e.fixed && r.check(e)) applyEffects(r.penalty, `Broke a rule (${r.short}): ${e.title}`);
+    if (ruled(e) && r.check(e)) applyEffects(r.penalty, `Broke a rule (${r.short}): ${e.title}`);
   }
   if (e.window && e.start !== null && (e.start < e.window[0] || e.start > e.window[1])) {
     applyEffects({ standing: -4 }, `Wrong time for ${e.title}`);
@@ -497,6 +509,7 @@ function startEvent(e: CalEvent) {
 
 function finishEvent(e: CalEvent) {
   e.status = 'done';
+  if (e.kind === 'work') return finishWork(e);
   if (e.kind === 'focus') {
     // Did anything actually cut into the block?
     const broke = S.events.some((o) => o !== e && blocks(o) && shares(o, e) && (o.status === 'done' || o.status === 'running') && o.start !== null && overlaps(o.start, end(o), e.start!, end(e)));
@@ -639,7 +652,7 @@ function missEvent(e: CalEvent, text: string) {
 
 /** Real meetings with other people get rebooked once. Lunches, focus time, personal stuff and solo blocks just vanish. */
 function canReschedule(e: CalEvent) {
-  if (e.rescheduled || e.fixed || e.force || e.kind === 'focus' || e.kind === 'personal') return false;
+  if (e.kind === 'work' || e.rescheduled || e.fixed || e.force || e.kind === 'focus' || e.kind === 'personal') return false;
   if (e.attendees.length === 1 && e.attendees[0] === 'me') return false;
   if (e.attendees.includes('team')) return false;
   return !/lunch|focus|gym|haircut|break|standup|dentist/i.test(e.title);
@@ -819,7 +832,8 @@ export function issuesFor(e: CalEvent): Issue[] {
     if (e.travel) out.push({ icon: '🚗', text: `${e.travel}m travel`, bad: false });
     if (e.catering === 'wanted') out.push({ icon: '🍱', text: 'Catering', bad: false });
     if (e.minOk && e.minOk < (e.baseDuration ?? e.duration)) out.push({ icon: '✂️', text: `Can be ${e.minOk}m`, bad: false });
-    for (const id of day().rules) if (RULES[id].id === 'max60' && RULES[id].check(e)) out.push({ icon: '⚠️', text: RULES[id].short, bad: true });
+    for (const id of day().rules) if (RULES[id].id === 'max60' && ruled(e) && RULES[id].check(e)) out.push({ icon: '⚠️', text: RULES[id].short, bad: true });
+    if (e.kind === 'work') out.push({ icon: '🎫', text: 'Not a meeting: rules don\'t apply', bad: false });
     return out;
   }
   if (e.status !== 'scheduled') return out;
@@ -833,7 +847,11 @@ export function issuesFor(e: CalEvent): Issue[] {
       out.push({ icon: tight ? '🚗' : '⛔', text: tight ? `No travel time around ${clash.title}` : `Clashes with ${clash.title}`, bad: true });
     }
   }
-  for (const id of day().rules) if (!e.fixed && RULES[id].check(e)) out.push({ icon: '⚠️', text: RULES[id].short, bad: true });
+  for (const id of day().rules) if (ruled(e) && RULES[id].check(e)) out.push({ icon: '⚠️', text: RULES[id].short, bad: true });
+  if (e.kind === 'work') {
+    const hit = S.events.find((o) => o !== e && active(o) && blocks(o) && shares(o, e) && o.start !== null && overlaps(s, end(e), occStart(o), occEnd(o)));
+    out.push(hit ? { icon: '⚡', text: `${hit.title} will interrupt it`, bad: true } : { icon: '🎧', text: 'Heads-down time', bad: false });
+  }
   if (e.window && (s < e.window[0] || s > e.window[1])) out.push({ icon: '🕒', text: `Should start ${fmt(e.window[0])}–${fmt(e.window[1])}`, bad: true });
   if (e.prep) {
     const busy = S.events.some((o) => o !== e && blocks(o) && shares(o, e) && (active(o) || o.status === 'done') && o.start !== null && overlaps(occStart(o), occEnd(o), occStart(e) - e.prep!, occStart(e)));
@@ -1086,7 +1104,58 @@ function chargeAddons(e: CalEvent) {
 }
 
 const editable = (e: CalEvent) => !e.fixed && e.kind !== 'focus' && e.kind !== 'personal' && (e.status === 'pending' || e.status === 'scheduled');
-export const canAddons = editable;
+export const canAddons = (e: CalEvent) => editable(e) && e.kind !== 'work';
+
+// ───────────────────────────── Trellis tickets ─────────────────────────────
+
+/** The work block booked for a ticket, today or ahead. */
+export function ticketBlock(id: string): { e: CalEvent; day: number } | null {
+  const e = S.events.find((x) => x.ticket === id && (x.status === 'pending' || x.status === 'scheduled' || x.status === 'running'));
+  if (e) return { e, day: S.dayIndex };
+  for (const [k, list] of Object.entries(S.future)) {
+    const f = list.find((x) => x.ticket === id);
+    if (f) return { e: f, day: +k };
+  }
+  return null;
+}
+
+/** Turn a ticket into a work-block request in the calendar tray. */
+export function scheduleTicket(id: string) {
+  const t = S.tickets.find((x) => x.id === id);
+  if (!t || t.status !== 'open') return;
+  const have = ticketBlock(id);
+  if (!have) {
+    const dur = Math.max(30, Math.ceil(t.left / 15) * 15);
+    S.events.push({
+      id: `${t.id}-w${S.seq++}`, title: `🎫 ${t.title}`, attendees: [t.who], start: null, duration: dur, baseDuration: dur,
+      kind: 'work', ticket: t.id, dueDay: t.dueDay, status: 'pending', fresh: true, noBump: true,
+      reward: {}, missPenalty: {}, declinePenalty: {},
+      note: `Heads-down time for ${EXECS[t.who].short}. Not a meeting, so meeting rules don't apply. Anything booked on top of it interrupts it. Due ${dayDate(t.dueDay)}.`,
+    });
+  }
+  S.selected = have && have.day !== S.dayIndex ? null : (have?.e.id ?? S.events[S.events.length - 1].id);
+  S.app = 'calendar';
+  dirty();
+}
+
+/** A work block ended: only the uninterrupted minutes count (and every interruption costs 15 more to get back into it). */
+function finishWork(e: CalEvent) {
+  const t = S.tickets.find((x) => x.id === e.ticket);
+  if (!t || t.status !== 'open' || e.start === null) return;
+  const hits = S.events.filter((o) => o !== e && blocks(o) && shares(o, e) && (o.status === 'done' || o.status === 'running') && o.start !== null && overlaps(occStart(o), occEnd(o), e.start!, end(e)));
+  let lost = 0;
+  for (const o of hits) lost += Math.min(end(e), occEnd(o)) - Math.max(e.start, occStart(o)) + 15;
+  const worked = Math.max(0, e.duration - lost);
+  t.left = Math.max(0, t.left - worked);
+  if (t.left === 0) {
+    t.status = 'done';
+    applyEffects(t.reward, `Done: ${t.title} (${EXECS[t.who].short})`);
+    banner('trellis', '✅ Ticket done', `${EXECS[t.who].short}: ${t.title}`);
+  } else {
+    applyEffects(hits.length ? { stress: 2 } : {}, hits.length ? `${e.title} got interrupted. ${t.left}m still to go.` : `${e.title}: ${t.left}m still to go.`);
+    banner('trellis', hits.length ? '⚡ Work interrupted' : '🎫 Not finished', `${t.title}: ${t.left}m left. Book more time.`);
+  }
+}
 
 /** People you took off the invite. */
 export const skippedFrom = (e: CalEvent): ExecId[] => (e.invited ?? []).filter((x) => !e.attendees.includes(x));
@@ -1258,6 +1327,11 @@ function checkGameOver(): boolean {
 
 export function endDay() {
   S.call = null;
+  for (const t of S.tickets) {
+    if (t.status !== 'open' || t.dueDay > S.dayIndex) continue;
+    t.status = 'late';
+    applyEffects(t.late, `Late: ${t.title} (${EXECS[t.who].short})`, true);
+  }
   for (const e of S.events) {
     if (e.status !== 'pending') continue;
     if (e.dueDay !== undefined && e.dueDay > S.dayIndex) {

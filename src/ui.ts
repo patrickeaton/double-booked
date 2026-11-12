@@ -4,7 +4,7 @@ import { CAL_END, CAL_START, DAY_END, DAY_START, EXECS, isBoss, PAYROLL, PRODUCT
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
   minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
-  toggleSpeed, unschedule, toggleAttendee, canEditAttendees, skippedFrom, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
+  toggleSpeed, unschedule, scheduleTicket, ticketBlock, toggleAttendee, canEditAttendees, skippedFrom, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
 } from './engine';
 import { avatarEl } from './avatars';
 import { coffeeOf, metPeople, statusOf } from './people';
@@ -40,6 +40,7 @@ const APPS: { id: AppId; name: string; icon: string; color: string; desc: string
   { id: 'card', name: 'Card', icon: '💳', color: '#1f2a44', desc: 'The company card. Watch the runway.' },
   { id: 'ryde', name: 'Ryde', icon: '🚕', color: '#111827', desc: 'Book cars for off-site meetings.' },
   { id: 'presto', name: 'Presto', icon: '⚡', color: '#5b5bd6', desc: 'One-tap shortcuts. Prep now, react later.' },
+  { id: 'trellis', name: 'Trellis', icon: '🎫', color: '#0f9d7a', desc: 'Tickets. Book people heads-down time to do them.' },
   { id: 'tably', name: 'Tably', icon: '🍽️', color: '#e8505b', desc: 'Restaurant reservations. Good luck at 7pm.' },
 ];
 
@@ -327,6 +328,7 @@ function badgeFor(app: AppId): number {
     return S.messages.filter((m) => m.app === app && (!m.read || (m.choices && m.chosen === undefined))).length;
   if (app === 'notes') return S.tasks.filter((t) => t.status === 'open').length;
   if (app === 'pulse') return dangerCount();
+  if (app === 'trellis') return S.tickets.filter((t) => t.status === 'open' && !ticketBlock(t.id)).length;
   return 0;
 }
 
@@ -883,6 +885,7 @@ function renderApp(app: AppId): HTMLElement {
     case 'presto': return renderPresto();
     case 'ryde': return renderRyde();
     case 'tably': return renderTably();
+    case 'trellis': return renderTrellis();
   }
 }
 
@@ -1253,6 +1256,47 @@ function renderRyde() {
 }
 
 let tablyParty = 4;
+
+let trellisTab: 'open' | 'closed' = 'open';
+
+function renderTrellis() {
+  const open = S.tickets.filter((t) => t.status === 'open').sort((a, b) => a.dueDay - b.dueDay);
+  const closed = S.tickets.filter((t) => t.status !== 'open').reverse();
+  const card = (t: (typeof S.tickets)[number]) => {
+    const blk = t.status === 'open' ? ticketBlock(t.id) : null;
+    const pct = Math.round(((t.est - t.left) / t.est) * 100);
+    const due = t.dueDay === S.dayIndex ? 'Due today' : t.dueDay === S.dayIndex + 1 ? 'Due tomorrow' : `Due ${dayDate(t.dueDay)}`;
+    const where = blk ? (blk.e.start === null ? 'In requests, not booked yet' : `${blk.day === S.dayIndex ? 'Today' : dayDate(blk.day)}, ${span2(blk.e.start, blk.e.start + blk.e.duration)}`) : null;
+    return h('div', { class: `ticket st-${t.status} ${t.status === 'open' && t.dueDay <= S.dayIndex ? 'urgent' : ''}` },
+      h('div', { class: 'ticket-top' },
+        face(t.who, 34),
+        h('div', { class: 'ticket-text' },
+          h('b', {}, t.title),
+          h('small', { class: 'muted' }, `${EXECS[t.who].short} · from ${t.from} · ${t.est}m`)),
+      ),
+      t.status === 'open' && h('div', { class: 'ticket-bar' }, h('span', { style: `width:${pct}%` })),
+      h('div', { class: 'ticket-foot' },
+        t.status === 'open'
+          ? h('span', { class: `ticket-due ${t.dueDay <= S.dayIndex ? 'bad' : ''}` }, `⏰ ${due}`, t.left < t.est ? ` · ${t.left}m left` : '')
+          : h('span', { class: 'ticket-due' }, t.status === 'done' ? '✅ Done' : '💀 Late'),
+        t.status === 'open' && (blk
+          ? h('button', { class: 'btn small-btn', onclick: () => scheduleTicket(t.id) }, blk.e.start === null ? '📥 In requests' : `📅 ${where}`)
+          : h('button', { class: 'btn primary small-btn', onclick: () => scheduleTicket(t.id) }, '📅 Book time')),
+      ),
+    );
+  };
+  return h('div', { class: 'app trellis' },
+    head('Trellis', 'Tickets need time, not meetings'),
+    h('div', { class: 'scroll', 'data-keep': 'trellis' },
+      h('div', { class: 'seg' },
+        h('button', { class: `seg-btn ${trellisTab === 'open' ? 'on' : ''}`, onclick: () => { trellisTab = 'open'; dirty(); } }, `🎫 Open · ${open.length}`),
+        h('button', { class: `seg-btn ${trellisTab === 'closed' ? 'on' : ''}`, onclick: () => { trellisTab = 'closed'; dirty(); } }, `Closed · ${closed.length}`)),
+      trellisTab === 'open' && h('p', { class: 'muted small trellis-tip' }, '🎧 Work blocks aren\'t meetings: they can go in Theo\'s focus time or before Margo\'s 10am. Anything booked on top of one interrupts it (and costs 15 min to get back into it).'),
+      ...(trellisTab === 'open' ? open : closed).map(card),
+      (trellisTab === 'open' ? open : closed).length === 0 && h('div', { class: 'empty' }, trellisTab === 'open' ? 'Inbox zero. Suspicious. 🌱' : 'Nothing closed yet.'),
+    ),
+  );
+}
 
 function renderTably() {
   const open = S.tasks.filter((x) => x.kind === 'reservation');

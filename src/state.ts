@@ -1,3 +1,4 @@
+import type { Ticket } from './tickets';
 import type { AppId, CalEvent, CallState, Effects, ExecId, LogEntry, Message, Meter, Order, Script, Shortcut, Task } from './types';
 
 export type Phase = 'title' | 'memo' | 'prep' | 'day' | 'review' | 'over' | 'end';
@@ -29,6 +30,8 @@ export interface GameState {
   incoming: CalEvent[];
   /** Meetings pushed today, landing tomorrow. */
   carry: CalEvent[];
+  /** Trellis tickets (they last across days). */
+  tickets: Ticket[];
   /** Meetings you've booked on later days (by absolute day index). */
   future: Record<number, CalEvent[]>;
   /** What earlier days' calendars ended up looking like (read-only). */
@@ -81,6 +84,7 @@ export const S: GameState = {
   carry: [],
   future: {},
   past: {},
+  tickets: [],
   messages: [],
   call: null,
   tasks: [],
@@ -186,11 +190,11 @@ export function saveCalPrefs() {
 
 // ───────────── save / load ─────────────
 const KEY = 'double-booked-save-v1';
-export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[]; shortcuts?: Shortcut[]; seed?: number; endless?: boolean; savedDrinks?: string[]; messages?: Message[]; kendall?: { helped: number; sabotaged: number }; future?: Record<number, CalEvent[]>; past?: Record<number, CalEvent[]> }
+export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[]; shortcuts?: Shortcut[]; seed?: number; endless?: boolean; savedDrinks?: string[]; messages?: Message[]; kendall?: { helped: number; sabotaged: number }; future?: Record<number, CalEvent[]>; past?: Record<number, CalEvent[]>; tickets?: Ticket[] }
 
 export function writeSave() {
   try {
-    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming, shortcuts: S.shortcuts, seed: S.seed, endless: S.endless, savedDrinks: S.savedDrinks, messages: S.messages, kendall: S.kendall, future: S.future, past: S.past };
+    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming, shortcuts: S.shortcuts, seed: S.seed, endless: S.endless, savedDrinks: S.savedDrinks, messages: S.messages, kendall: S.kendall, future: S.future, past: S.past, tickets: S.tickets };
     localStorage.setItem(KEY, JSON.stringify(s));
   } catch {
     /* storage may be unavailable */

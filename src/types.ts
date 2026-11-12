@@ -2,7 +2,7 @@
 export type ExecId = 'margo' | 'theo' | 'dana' | 'me' | 'team';
 export type Meter = 'standing' | 'runway' | 'morale' | 'stress';
 export type Effects = Partial<Record<Meter, number>>;
-export type AppId = 'calendar' | 'mail' | 'huddle' | 'messages' | 'brew' | 'bundl' | 'card' | 'notes' | 'ryde' | 'tably' | 'presto' | 'pulse';
+export type AppId = 'calendar' | 'mail' | 'huddle' | 'messages' | 'brew' | 'bundl' | 'card' | 'notes' | 'ryde' | 'tably' | 'presto' | 'pulse' | 'trellis';
 export type InboxApp = 'mail' | 'huddle' | 'messages';
 
 export interface Exec {
@@ -29,7 +29,10 @@ export interface CalEvent {
   fixed?: boolean;
   /** Fixed events that barge in: they never get "missed", they make others missed. */
   force?: boolean;
-  kind?: 'meeting' | 'focus' | 'personal';
+  /** 'work' = heads-down time for a Trellis ticket. Not a meeting: meeting rules don't apply. */
+  kind?: 'meeting' | 'focus' | 'personal' | 'work';
+  /** The Trellis ticket a work block is for. */
+  ticket?: string;
   /** Must START within this window. */
   window?: [number, number];
   /** Minutes the attendees need free right before it starts. */
