@@ -210,7 +210,7 @@ function renderCalendar() {
 
   const tray = h('div', { class: 'tray' },
     h('div', { class: 'tray-head' }, `Requests`, h('span', { class: 'count' }, pending.length),
-      h('span', { class: 'muted hint' }, pending.length ? 'Drag onto the calendar, or tap then tap a time' : 'All booked 🎉')),
+      h('span', { class: 'muted hint' }, pending.length ? split.matches ? 'Drag onto the calendar, or tap then tap a time' : 'Swipe for more · tap or drag down to book' : 'All booked 🎉')),
     h('div', { class: 'tray-cards' }, ...pending.map(renderCard)),
   );
 
@@ -289,20 +289,20 @@ function renderSelection(e: CalEvent) {
   const issues = issuesFor(e);
   const canAct = e.status === 'pending' || (e.status === 'scheduled' && !e.fixed);
   return h('div', { class: 'selbar' },
-    h('div', { class: 'selbar-main' },
+    h('div', { class: 'selbar-top' },
       h('b', {}, e.title),
-      h('div', { class: 'muted small' },
-        `${e.attendees.map((a) => EXECS[a].short).join(' & ')} · ${e.duration} min`,
+      h('span', { class: 'muted small nowrap' },
+        `${e.attendees.map((a) => EXECS[a].short).join(' & ')} · ${e.duration}m`,
         e.start !== null ? ` · ${fmt(e.start)}` : '',
         e.status !== 'scheduled' && e.status !== 'pending' ? ` · ${e.status}` : ''),
-      e.note && h('div', { class: 'small note' }, e.note),
-      issues.length > 0 && h('div', { class: 'req-tags' }, ...issues.map((i) => h('span', { class: `tag ${i.bad ? 'bad' : ''}` }, `${i.icon} ${i.text}`))),
-      canAct && h('div', { class: 'small hint-strong' }, '👆 Tap a time on the calendar to place it'),
     ),
+    e.note && h('div', { class: 'small note' }, e.note),
+    issues.length > 0 && h('div', { class: 'req-tags' }, ...issues.map((i) => h('span', { class: `tag ${i.bad ? 'bad' : ''}` }, `${i.icon} ${i.text}`))),
     h('div', { class: 'selbar-actions' },
+      canAct ? h('span', { class: 'small hint-strong' }, '👇 Tap a time') : h('span', {}),
       e.status === 'scheduled' && !e.fixed && h('button', { class: 'btn', onclick: () => unschedule(e.id) }, 'Unbook'),
       canAct && h('button', { class: 'btn danger', onclick: () => declineEvent(e.id) }, 'Decline'),
-      h('button', { class: 'btn ghost', onclick: () => select(null) }, '✕'),
+      h('button', { class: 'btn', onclick: () => select(null) }, 'Cancel'),
     ),
   );
 }
@@ -315,6 +315,9 @@ function minuteAt(col: HTMLElement, clientY: number) {
 let suppressUntil = 0;
 
 function makeDraggable(el: HTMLElement, id: string, isBlock: boolean) {
+  el.addEventListener('click', () => {
+    if (Date.now() >= suppressUntil) select(id);
+  });
   el.addEventListener('pointerdown', (down: PointerEvent) => {
     if (down.button !== 0) return;
     const sx = down.clientX;
@@ -325,7 +328,7 @@ function makeDraggable(el: HTMLElement, id: string, isBlock: boolean) {
     let ghost: HTMLElement | null = null;
 
     const move = (m: PointerEvent) => {
-      if (!ghost && Math.hypot(m.clientX - sx, m.clientY - sy) > 7) {
+      if (!ghost && Math.hypot(m.clientX - sx, m.clientY - sy) > 7 && (isBlock || split.matches || Math.abs(m.clientY - sy) > Math.abs(m.clientX - sx))) {
         ghost = h('div', { class: 'ghost', style: `--c:${EXECS[ev.attendees[0]].color};height:${Math.max(18, ev.duration * PX)}px` }, h('b', {}, ev.title), h('span', { class: 'ghost-time' }));
         document.body.append(ghost);
         document.body.classList.add('dragging');
@@ -356,14 +359,12 @@ function makeDraggable(el: HTMLElement, id: string, isBlock: boolean) {
       window.removeEventListener('pointercancel', up);
       document.body.classList.remove('dragging');
       document.querySelectorAll('.cal-col.hover').forEach((c) => c.classList.remove('hover'));
-      const moved = Math.hypot(u.clientX - sx, u.clientY - sy) > 7;
+      const moved = Math.hypot(u.clientX - sx, u.clientY - sy) > 7 && (isBlock || split.matches || Math.abs(u.clientY - sy) > Math.abs(u.clientX - sx));
       if (ghost || moved) {
         ghost?.remove();
         suppressUntil = Date.now() + 250;
         const col = colAt(u.clientX, u.clientY);
         if (col && u.type === 'pointerup') placeEvent(id, minuteAt(col, u.clientY - offY));
-      } else if (u.type === 'pointerup') {
-        select(id);
       }
     };
     window.addEventListener('pointermove', move, { passive: false });
