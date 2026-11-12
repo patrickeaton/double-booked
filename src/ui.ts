@@ -4,10 +4,11 @@ import { CAL_END, CAL_START, DAY_END, DAY_START, EXECS, isBoss, PAYROLL, PRODUCT
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
   minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
-  toggleSpeed, pauseCost, unschedule, whereOf, atOffice, placeLabel, padBefore, padAfter, canBuffer, setBuffer, scheduleTicket, ticketBlock, toggleAttendee, canEditAttendees, skippedFrom, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
+  toggleSpeed, scheduleAllTickets, bookAllRequests, pauseCost, unschedule, whereOf, atOffice, placeLabel, padBefore, padAfter, canBuffer, setBuffer, scheduleTicket, ticketBlock, toggleAttendee, canEditAttendees, skippedFrom, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
 } from './engine';
 import { avatarEl } from './avatars';
 import { coffeeOf, metPeople, statusOf } from './people';
+import { PRIORITY_LABEL } from './tickets';
 import { MAX_SHORTCUTS, addShortcut, removeShortcut, runShortcut, shortcutLabel } from './shortcuts';
 import { saveCalPrefs } from './state';
 import { METER_LABEL, S, dirty, fmtEffect, fmtMoney, isGood, readSave, setRenderer } from './state';
@@ -130,8 +131,10 @@ function render() {
     const panes: HTMLElement[] = [];
     if (isSplit) {
       if (S.app === 'calendar' || !hasApp(S.app)) S.app = hasApp('mail') ? 'mail' : 'huddle';
+      // While a calendar sidecar is open, the other app steps aside.
+      const calSide = layout !== 'app' && (drawerOpen || (!!S.selected && (S.selected !== lastSel || detailOpen)));
       if (layout !== 'app') panes.push(h('section', { class: 'pane pane-cal' }, renderCalendar()));
-      if (layout !== 'cal') panes.push(h('section', { class: 'pane pane-app has-win' }, renderApp(S.app), winCtrls(true)));
+      if (layout !== 'cal' && !calSide) panes.push(h('section', { class: 'pane pane-app has-win' }, renderApp(S.app), winCtrls(true)));
     } else {
       panes.push(S.app === 'calendar'
         ? h('section', { class: 'pane pane-app' }, renderCalendar())
@@ -437,21 +440,16 @@ function renderCalendar() {
   const hiddenN = activeExecs().length - execs.length;
   const header = h('header', { class: 'app-head' },
     h('h2', { class: 'cal-title' }, 'Calendar',
-      activeExecs().length > 1 && h('button', { class: 'cal-manage', onclick: () => { calSheet = true; dirty(); } }, '☰ Calendars', hiddenN > 0 && h('span', { class: 'start-count', title: `${hiddenN} hidden` }, `−${hiddenN}`))),
-    renderDayNav(),
+      activeExecs().length > 1 && h('button', { class: 'cal-manage', onclick: () => { calSheet = true; dirty(); } }, '☰', h('span', { class: 'cm-text' }, ' Calendars'), hiddenN > 0 && h('span', { class: 'start-count', title: `${hiddenN} hidden` }, `−${hiddenN}`))),
+    h('div', { class: 'cal-head-right' },
+      h('button', { class: `req-icon ${pending.length ? 'has' : ''}`, onclick: () => { drawerOpen = true; S.selected = null; dirty(); }, title: 'Requests', 'aria-label': `Requests (${pending.length})` },
+        '📥', pending.length > 0 && h('span', { class: 'badge' }, pending.length)),
+      renderDayNav()),
   );
   void d;
 
-  // Tablet: an inline tray. Phone: a button that opens a sidecar drawer (it closes as soon as you drag).
-  const tray = split.matches
-    ? h('div', { class: 'tray' },
-        h('div', { class: 'tray-head' }, `Requests`, h('span', { class: 'count' }, pending.length),
-          h('span', { class: 'muted hint' }, pending.length ? 'Drag onto the calendar, or tap then tap a time' : 'All booked 🎉')),
-        h('div', { class: 'tray-cards' }, ...pending.map(renderCard)))
-    : h('button', { class: `req-btn ${pending.length ? '' : 'empty'}`, disabled: !pending.length, onclick: () => { drawerOpen = true; dirty(); } },
-        '📥 Requests', h('span', { class: 'count' }, pending.length),
-        h('span', { class: 'muted hint' }, pending.length ? 'Tap to open ›' : 'All booked 🎉'));
-  if (!pending.length) drawerOpen = false;
+  // Requests live in a sidecar on every screen size, opened from the 📥 icon in the header.
+  const tray = null;
   const detail = sel && detailOpen
     ? h('div', { class: 'drawer-wrap' },
         h('div', { class: 'drawer-backdrop', style: sideDelay(), onclick: () => { detailOpen = false; dirty(); } }),
@@ -462,14 +460,18 @@ function renderCalendar() {
             ahead ? renderAheadSelection(sel, ahead.day) : renderDetails(sel)),
           !ahead && (() => { const a = detailActions(sel); return a && h('div', { class: 'drawer-foot' }, a); })()))
     : null;
-  const drawer = !split.matches && drawerOpen
+  const drawer = drawerOpen
     ? h('div', { class: 'drawer-wrap' },
         h('div', { class: 'drawer-backdrop', style: sideDelay(), onclick: () => { drawerOpen = false; dirty(); } }),
         h('aside', { class: 'drawer', style: sideDelay() },
           h('div', { class: 'drawer-head' }, h('b', {}, 'Requests'), h('span', { class: 'count' }, pending.length),
             h('button', { class: 'win-btn', onclick: () => { drawerOpen = false; dirty(); } }, '✕')),
-          h('p', { class: 'muted small drawer-hint' }, 'Tap one to pick a time, or drag it sideways onto the calendar.'),
-          h('div', { class: 'drawer-cards', 'data-keep': 'drawer' }, ...pending.map(renderCard))))
+          h('p', { class: 'muted small drawer-hint' }, 'Tap one to pick a time, or drag it onto the calendar.'),
+          h('div', { class: 'drawer-cards', 'data-keep': 'drawer' },
+            ...[...pending].sort((a, b) => (a.kind === 'work' ? 1 : 0) - (b.kind === 'work' ? 1 : 0) || (a.priority ?? 2) - (b.priority ?? 2)).map(renderCard),
+            pending.length === 0 && h('div', { class: 'empty' }, 'All booked 🎉')),
+          pending.length > 1 && h('div', { class: 'drawer-foot' },
+            h('button', { class: 'btn primary big book-all', onclick: () => { bookAllRequests(); drawerOpen = false; dirty(); } }, `📍 Book all ${pending.length} at their best slots`))))
     : null;
 
   const phone = !split.matches;
@@ -567,6 +569,7 @@ function renderCard(e: CalEvent) {
     h('div', { class: 'req-tags' },
       e.dueDay !== undefined && h('span', { class: `tag due ${e.dueDay === S.dayIndex ? 'bad' : ''}` }, e.dueDay === S.dayIndex ? '⏰ Due today' : `📆 By ${shortDate(e.dueDay)}`),
       e.rescheduled && h('span', { class: 'tag bad' }, '💥 Rebook'),
+      e.kind === 'work' && h('span', { class: `tag prio p${e.priority ?? 2}` }, PRIORITY_LABEL[(e.priority ?? 2) as 1 | 2 | 3]),
       ...issuesFor(e).map((i) => h('span', { class: `tag ${i.bad ? 'bad' : ''}` }, `${i.icon} ${i.text}`))),
   );
   makeDraggable(card, e.id, false);
@@ -1253,7 +1256,8 @@ let tablyParty = 4;
 let trellisTab: 'open' | 'closed' = 'open';
 
 function renderTrellis() {
-  const open = S.tickets.filter((t) => t.status === 'open').sort((a, b) => a.dueDay - b.dueDay);
+  const open = S.tickets.filter((t) => t.status === 'open').sort((a, b) => (a.priority ?? 2) - (b.priority ?? 2) || a.dueDay - b.dueDay);
+  const unbooked = open.filter((t) => !ticketBlock(t.id)).length;
   const closed = S.tickets.filter((t) => t.status !== 'open').reverse();
   const card = (t: (typeof S.tickets)[number]) => {
     const blk = t.status === 'open' ? ticketBlock(t.id) : null;
@@ -1264,7 +1268,7 @@ function renderTrellis() {
       h('div', { class: 'ticket-top' },
         face(t.who, 34),
         h('div', { class: 'ticket-text' },
-          h('b', {}, t.title),
+          h('b', {}, h('span', { class: `prio-pill p${t.priority ?? 2}` }, `P${t.priority ?? 2}`), ' ', t.title),
           h('small', { class: 'muted' }, `${EXECS[t.who].short} · from ${t.from} · ${t.est}m`)),
       ),
       t.status === 'open' && h('div', { class: 'ticket-bar' }, h('span', { style: `width:${pct}%` })),
@@ -1273,17 +1277,18 @@ function renderTrellis() {
           ? h('span', { class: `ticket-due ${t.dueDay <= S.dayIndex ? 'bad' : ''}` }, `⏰ ${due}`, t.left < t.est ? ` · ${t.left}m left` : '')
           : h('span', { class: 'ticket-due' }, t.status === 'done' ? '✅ Done' : '💀 Late'),
         t.status === 'open' && (blk
-          ? h('button', { class: 'btn small-btn', onclick: () => scheduleTicket(t.id) }, blk.e.start === null ? '📥 In requests' : `📅 ${where}`)
-          : h('button', { class: 'btn primary small-btn', onclick: () => scheduleTicket(t.id) }, '📅 Book time')),
+          ? h('button', { class: 'btn small-btn', onclick: () => { if (blk.e.start === null) { drawerOpen = true; S.selected = null; if (!split.matches) openApp('calendar'); dirty(); } else scheduleTicket(t.id); } }, blk.e.start === null ? '📥 In requests' : `📅 ${where}`)
+          : h('button', { class: 'btn primary small-btn', onclick: () => scheduleTicket(t.id, false) }, '＋ Add to requests')),
       ),
     );
   };
   return h('div', { class: 'app trellis' },
-    head('Trellis', 'Tickets need time, not meetings'),
+    head('Trellis', 'Add tickets to your requests, then book them'),
     h('div', { class: 'scroll', 'data-keep': 'trellis' },
       h('div', { class: 'seg' },
         h('button', { class: `seg-btn ${trellisTab === 'open' ? 'on' : ''}`, onclick: () => { trellisTab = 'open'; dirty(); } }, `🎫 Open · ${open.length}`),
         h('button', { class: `seg-btn ${trellisTab === 'closed' ? 'on' : ''}`, onclick: () => { trellisTab = 'closed'; dirty(); } }, `Closed · ${closed.length}`)),
+      trellisTab === 'open' && unbooked > 1 && h('button', { class: 'btn primary big trellis-all', onclick: scheduleAllTickets }, `📥 Add all ${unbooked} to requests`),
       trellisTab === 'open' && h('p', { class: 'muted small trellis-tip' }, '🎧 Work blocks aren\'t meetings: they can go in Theo\'s focus time or before Margo\'s 10am. Anything booked on top of one interrupts it (and costs 15 min to get back into it).'),
       ...(trellisTab === 'open' ? open : closed).map(card),
       (trellisTab === 'open' ? open : closed).length === 0 && h('div', { class: 'empty' }, trellisTab === 'open' ? 'Inbox zero. Suspicious. 🌱' : 'Nothing closed yet.'),

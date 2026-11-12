@@ -717,3 +717,24 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .banner-reply { background: #ece8de; border-radius: 99px; padding: 6px 11px; font-size: 12px; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .banner-reply:active { background: var(--ink); color: #fff; }
 .banner.has-replies .banner-text { flex: 1 1 0; }
+
+/* Requests: an icon with a badge in the calendar header */
+.cal-head-right { display: flex; align-items: center; gap: 8px; }
+.req-icon { position: relative; width: 38px; height: 34px; border-radius: 12px; background: #ece8de; font-size: 18px; display: grid; place-items: center; }
+.req-icon.has { background: #fff1c2; box-shadow: inset 0 0 0 2px #ffd166; }
+.req-icon .badge { top: -6px; right: -7px; }
+.book-all { width: 100%; }
+.is-split .drawer:not(.detail) { width: min(46%, 400px); }
+/* Priority */
+.prio-pill { display: inline-block; font-size: 10px; font-weight: 900; border-radius: 6px; padding: 1px 5px; vertical-align: 2px; background: #e8e5dc; color: #555a70; }
+.prio-pill.p1, .tag.prio.p1 { background: #ffe1dc; color: #b42318; }
+.prio-pill.p2, .tag.prio.p2 { background: #e8f0ff; color: #1d4ed8; }
+.prio-pill.p3, .tag.prio.p3 { background: #eeece6; color: #6b7280; }
+.trellis-all { width: 100%; margin-bottom: 10px; }
+@media (max-width: 819px) {
+  .cm-text { display: none; }
+  .cal-manage { padding: 6px 9px; font-size: 13px; }
+  .daynav-label { min-width: 62px; padding: 0 2px; }
+  .daynav-btn { width: 26px; }
+  .cal-head-right { gap: 6px; }
+}

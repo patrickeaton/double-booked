@@ -884,6 +884,8 @@ export function issuesFor(e: CalEvent): Issue[] {
     } else {
       // Not a hard clash, but it eats into a buffer (its own, or the other meeting's).
       const inBuf = S.events.find((o) => o !== e && active(o) && blocks(o) && shares(o, e) && o.start !== null && overlaps(padStart(e), padEnd(e), padStart(o), padEnd(o)));
+      const work = S.events.find((o) => o !== e && o.kind === 'work' && active(o) && shares(o, e) && o.start !== null && overlaps(occStart(e), occEnd(e), o.start, end(o)));
+      if (work) out.push({ icon: '⚡', text: `Interrupts ${work.priority === 1 ? 'P1 ' : ''}work: ${work.title.replace(/^\S+ /, '')}`, bad: work.priority === 1 });
       if (inBuf) out.push({ icon: '🧘', text: overlaps(padStart(e), padEnd(e), inBuf.start!, end(inBuf)) ? `${inBuf.title} is in its buffer` : `In ${inBuf.title}'s buffer`, bad: true });
     }
   }
@@ -1158,21 +1160,47 @@ export function ticketBlock(id: string): { e: CalEvent; day: number } | null {
 }
 
 /** Turn a ticket into a work-block request in the calendar tray. */
-export function scheduleTicket(id: string) {
+/** Add a ticket's work block to the requests. With `go`, jump to the calendar with it selected; otherwise stay put. */
+export function scheduleTicket(id: string, go = true) {
   const t = S.tickets.find((x) => x.id === id);
   if (!t || t.status !== 'open') return;
   const have = ticketBlock(id);
   if (!have) {
     const dur = Math.max(30, Math.ceil(t.left / 15) * 15);
+    const p = t.priority ?? 2;
     S.events.push({
-      id: `${t.id}-w${S.seq++}`, title: `🎫 ${t.title}`, attendees: [t.who], start: null, duration: dur, baseDuration: dur,
-      kind: 'work', ticket: t.id, dueDay: t.dueDay, status: 'pending', fresh: true, noBump: true,
+      id: `${t.id}-w${S.seq++}`, title: `${p === 1 ? '🔥' : '🎫'} ${t.title}`, attendees: [t.who], start: null, duration: dur, baseDuration: dur,
+      kind: 'work', ticket: t.id, priority: p, dueDay: t.dueDay, status: 'pending', fresh: true, noBump: true,
       reward: {}, missPenalty: {}, declinePenalty: {},
       note: `Heads-down time for ${EXECS[t.who].short}. Not a meeting, so meeting rules don't apply. Anything booked on top of it interrupts it. Due ${dayDate(t.dueDay)}.`,
     });
   }
+  if (!go) {
+    if (!have) banner('trellis', '📥 Added to requests', t.title, undefined, 2500);
+    return dirty();
+  }
   S.selected = have && have.day !== S.dayIndex ? null : (have?.e.id ?? S.events[S.events.length - 1].id);
   S.app = 'calendar';
+  dirty();
+}
+
+/** Every open ticket without time booked goes into the requests (urgent first). */
+export function scheduleAllTickets() {
+  const todo = S.tickets.filter((t) => t.status === 'open' && !ticketBlock(t.id)).sort((a, b) => (a.priority ?? 2) - (b.priority ?? 2) || a.dueDay - b.dueDay);
+  for (const t of todo) scheduleTicket(t.id, false);
+  S.banners = S.banners.filter((b) => b.title !== '📥 Added to requests');
+  if (todo.length) banner('trellis', '📥 Added to requests', `${todo.length} work block${todo.length > 1 ? 's' : ''}. Open Requests on the calendar to place them.`, undefined, 3500);
+  dirty();
+}
+
+/** Book every request at its best slot: meetings due today first, then work by priority. */
+export function bookAllRequests() {
+  const rank = (e: CalEvent) => (e.kind === 'work' ? 10 + (e.priority ?? 2) : e.dueDay !== undefined ? 5 : 0);
+  const todo = S.events.filter((e) => e.status === 'pending' && !e.fixed).sort((a, b) => rank(a) - rank(b));
+  let n = 0;
+  for (const e of todo) if (autoPlace(e.id) !== null) n++;
+  S.selected = null;
+  banner('calendar', '📍 Booked', `${n} of ${todo.length} at their best slots. Check the ⚠️ ones.`, undefined, 3000);
   dirty();
 }
 
@@ -1190,7 +1218,7 @@ function finishWork(e: CalEvent) {
     applyEffects(t.reward, `Done: ${t.title} (${EXECS[t.who].short})`);
     banner('trellis', '✅ Ticket done', `${EXECS[t.who].short}: ${t.title}`);
   } else {
-    applyEffects(hits.length ? { stress: 2 } : {}, hits.length ? `${e.title} got interrupted. ${t.left}m still to go.` : `${e.title}: ${t.left}m still to go.`);
+    applyEffects(hits.length ? { stress: t.priority === 1 ? 5 : 2 } : {}, hits.length ? `${e.title} got interrupted. ${t.left}m still to go.` : `${e.title}: ${t.left}m still to go.`);
     banner('trellis', hits.length ? '⚡ Work interrupted' : '🎫 Not finished', `${t.title}: ${t.left}m left. Book more time.`);
   }
 }

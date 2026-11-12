@@ -11,6 +11,8 @@ export interface Ticket {
   /** Minutes of real, uninterrupted work still needed. */
   left: number;
   dueDay: number;
+  /** 1 = urgent, 2 = normal, 3 = whenever. Scales the payoff and the cost of missing it. */
+  priority?: 1 | 2 | 3;
   status: 'open' | 'done' | 'late';
   reward: Effects;
   late: Effects;
@@ -42,6 +44,10 @@ const POOL: T[] = [
 const rewardFor = (t: T): Effects => (t.who === 'me' ? { standing: 2, stress: -3 } : { standing: 3 });
 const lateFor = (t: T): Effects => (t.who === 'me' ? { stress: 5, standing: -2 } : t.who === 'theo' ? { morale: -3, standing: -2 } : { standing: -4 });
 
+export const PRIORITY_MULT = { 1: 2, 2: 1, 3: 0.5 } as const;
+export const PRIORITY_LABEL = { 1: 'P1 · Urgent', 2: 'P2 · Normal', 3: 'P3 · Whenever' } as const;
+const scale = (fx: Effects, k: number): Effects => Object.fromEntries(Object.entries(fx).map(([m, v]) => [m, Math.round((v as number) * k) || Math.sign(v as number)]));
+
 /** Day 0 is a Wednesday. Next weekday on or after `i`. */
 const workday = (i: number) => {
   while ([0, 6].includes((3 + i) % 7)) i++;
@@ -61,8 +67,12 @@ export function ticketsFor(dayIndex: number, seed: number, execs: ExecId[], take
   const opts = POOL.filter((t) => execs.includes(t.who) && !taken.includes(t.title));
   for (let n = 0; n < count && opts.length; n++) {
     const t = opts.splice(Math.floor(r() * opts.length), 1)[0];
-    const dueDay = workday(dayIndex + 1 + Math.floor(r() * 3));
-    out.push({ id: `t${dayIndex}-${n}`, title: t.title, who: t.who, from: t.from, est: t.est, left: t.est, dueDay, status: 'open', reward: rewardFor(t), late: lateFor(t), day: dayIndex });
+    const roll = r();
+    const priority: 1 | 2 | 3 = roll < 0.22 ? 1 : roll < 0.72 ? 2 : 3;
+    // Urgent ones are due sooner.
+    const dueDay = workday(dayIndex + 1 + (priority === 1 ? 0 : Math.floor(r() * 3)));
+    const k = PRIORITY_MULT[priority];
+    out.push({ id: `t${dayIndex}-${n}`, title: t.title, who: t.who, from: t.from, est: t.est, left: t.est, dueDay, priority, status: 'open', reward: scale(rewardFor(t), k), late: scale(lateFor(t), k), day: dayIndex });
   }
   return out;
 }
