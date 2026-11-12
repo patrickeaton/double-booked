@@ -90,7 +90,6 @@ function render() {
   const isSplit = split.matches;
   refs.device.classList.toggle('is-split', isSplit);
   refs.device.classList.toggle('is-day', S.phase === 'day');
-  refs.device.classList.toggle('low-battery', S.battery < 15);
 
   refs.status.replaceChildren(renderStatus());
   refs.meters.replaceChildren(...renderMeters());
@@ -146,14 +145,12 @@ let overlayBorn = 0;
 function renderStatus() {
   const time = S.phase === 'prep' || S.phase === 'memo' ? fmt(S.now) : S.phase === 'day' ? fmt(S.now) : '—';
   const label = S.phase === 'prep' ? 'Morning prep' : S.phase === 'day' ? (S.paused ? 'Paused' : 'Workday') : '';
-  const bat = Math.round(S.battery);
   return h('div', { class: 'status-inner' },
     h('span', { class: 'clock' }, time, label && h('small', {}, label)),
     h('span', { class: 'day-pill' }, `Day ${S.dayIndex + 1}/30`),
     h('span', { class: 'status-right' },
       S.phase === 'day' && h('button', { class: 'chip-btn', onclick: toggleSpeed, title: 'Speed' }, `${S.speed}×`),
       S.phase === 'day' && h('button', { class: 'chip-btn', onclick: togglePause, title: 'Pause' }, S.paused ? '▶' : '⏸'),
-      h('span', { class: `battery ${bat < 20 ? 'low' : ''}` }, h('span', { class: 'battery-fill', style: `width:${bat}%` }), h('span', { class: 'battery-num' }, `${bat}%`)),
     ),
   );
 }
@@ -568,7 +565,6 @@ function renderOverlay(): HTMLElement | null {
   if (S.phase === 'review') return renderReview();
   if (S.phase === 'over') return renderOver();
   if (S.phase === 'end') return renderEnd();
-  if (S.deadUntil !== null) return h('div', { class: 'dead' }, h('div', { class: 'dead-icon' }, '🪫'), h('h2', {}, 'Your phone died.'), h('p', {}, 'Notifications are piling up somewhere. You can feel them.'), h('p', { class: 'muted' }, `Back at ${fmt(S.deadUntil)}…`));
   if (S.call) return renderCall();
   if (S.sheet) return renderSheet();
   return null;

@@ -60,7 +60,6 @@ export const DRINKS: Drink[] = [
 ];
 
 export const PRODUCTS: Product[] = [
-  { id: 'charger', name: 'Phone Charger (Fast™)', emoji: '🔌', price: 25, desc: 'Arrives in 15 min. Your battery will thank you.', tier: 'utility' },
   { id: 'mug', name: 'Branded Sproutly Mug', emoji: '☕', price: 12, desc: '"Talk to your plants." Ships in a box with more logo.', tier: 'cheap' },
   { id: 'succulent', name: 'Desk Succulent', emoji: '🪴', price: 38, desc: 'On-brand. Hard to kill. Like Margo.', tier: 'good' },
   { id: 'chocolate', name: 'Artisan Chocolate Box', emoji: '🍫', price: 54, desc: '12 pieces. Each one has a backstory.', tier: 'good' },
@@ -102,7 +101,6 @@ export const DAYS: DayDef[] = [
   {
     title: 'Welcome to Sproutly',
     subtitle: 'The AI that talks to your houseplants.',
-    battery: 100,
     memo: {
       from: 'Bev (People Ops)',
       subject: 'Welcome aboard! 🌱',
@@ -194,12 +192,11 @@ export const DAYS: DayDef[] = [
   {
     title: 'Two Bosses',
     subtitle: 'Theo has entered the chat.',
-    battery: 82,
     memo: {
       from: 'Bev (People Ops)',
       subject: 'New policy + new boss',
       body:
-        "Two things!\n\n1. Margo read a book on productivity. Effective today: no meeting may run longer than 60 minutes.\n\n2. You're now also managing Theo (CTO). His 1–5pm focus block is non-negotiable. Last EA who touched it now works at a llama farm. (Happily, we hear.)\n\nAlso, your phone is at 82%. Did you charge it?? 🔋",
+        "Two things!\n\n1. Margo read a book on productivity. Effective today: no meeting may run longer than 60 minutes.\n\n2. You're now also managing Theo (CTO). His 1–5pm focus block is non-negotiable. Last EA who touched it now works at a llama farm. (Happily, we hear.)",
     },
     execs: ['margo', 'theo'],
     rules: ['margoMorning', 'theoFocus', 'max60'],
@@ -294,12 +291,11 @@ export const DAYS: DayDef[] = [
   {
     title: 'The Squeeze',
     subtitle: 'There are no right answers. Only less-wrong ones.',
-    battery: 64,
     memo: {
       from: 'Bev (People Ops)',
       subject: 'Big day!! (no pressure)',
       body:
-        "Kestrel's partners are visiting today. If it goes well, Sproutly survives the quarter. If not… let's stay positive! 🌸\n\nAlso, Finance lowered the company card limit. Please spend wisely.\n\nAlso also, your phone is at 64%. I'm just saying.",
+        "Kestrel's partners are visiting today. If it goes well, Sproutly survives the quarter. If not… let's stay positive! 🌸\n\nAlso, Finance lowered the company card limit. Please spend wisely.",
     },
     execs: ['margo', 'theo'],
     rules: ['margoMorning', 'theoFocus', 'max60'],

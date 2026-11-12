@@ -36,9 +36,6 @@ export interface GameState {
   selected: string | null;
   paused: boolean;
   speed: number;
-  battery: number;
-  deadUntil: number | null;
-  lowBatteryWarned: boolean;
   banners: Banner[];
   toasts: Toast[];
   sheet: Sheet | null;
@@ -71,9 +68,6 @@ export const S: GameState = {
   selected: null,
   paused: false,
   speed: 1,
-  battery: 100,
-  deadUntil: null,
-  lowBatteryWarned: false,
   banners: [],
   toasts: [],
   sheet: null,

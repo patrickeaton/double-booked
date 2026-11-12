@@ -54,9 +54,6 @@ export function setupDay(i: number) {
   S.sheet = null;
   S.review = null;
   S.overReason = null;
-  S.battery = d.battery;
-  S.deadUntil = null;
-  S.lowBatteryWarned = false;
   S.banners = [];
   S.toasts = [];
   S.paused = false;
@@ -133,22 +130,6 @@ export function toggleSpeed() {
 function advance() {
   S.now++;
   const now = S.now;
-
-  // battery
-  S.battery = Math.max(0, S.battery - 0.16);
-  if (S.battery <= 20 && !S.lowBatteryWarned) {
-    S.lowBatteryWarned = true;
-    banner('bundl', '🔋 Battery at 20%', 'Bundl sells chargers. Just saying.');
-  }
-  if (S.battery <= 0 && S.deadUntil === null) {
-    S.deadUntil = now + 25;
-    applyEffects({ stress: 10 }, 'Your phone died mid-crisis.');
-  }
-  if (S.deadUntil !== null && now >= S.deadUntil) {
-    S.deadUntil = null;
-    S.battery = 30;
-    banner('calendar', '🔌 Borrowed Wren\'s charger', 'Back at 30%. Wren wants it back.');
-  }
 
   // scripts
   while (S.queue.length && S.queue[0].at <= now) fire(S.queue.shift()!);
@@ -473,7 +454,7 @@ export function orderDrink(drinkId: string, to: string) {
 
 export function buyProduct(productId: string, to: string, pay: 'company' | 'me') {
   const p = PRODUCTS.find((x) => x.id === productId)!;
-  const arrive = (S.phase === 'day' ? S.now : DAY_START) + (p.id === 'charger' ? 15 : 60);
+  const arrive = (S.phase === 'day' ? S.now : DAY_START) + 60;
   S.orders.push({ id: `o${uid()}`, app: 'bundl', item: p.id, label: p.name, to, price: p.price, arriveAt: arrive, arrived: false, paidBy: pay });
   S.sheet = null;
 
@@ -514,11 +495,6 @@ function deliver(o: (typeof S.orders)[number]) {
       if (task.status === 'done') applyEffects(task.reward, `${EXECS[exec].short} got their coffee.`);
       else applyEffects({ morale: -2 }, `${EXECS[exec].short} got the wrong coffee.`);
     }
-  } else if (o.item === 'charger') {
-    S.battery = 100;
-    S.deadUntil = null;
-    S.lowBatteryWarned = false;
-    banner('bundl', '🔌 Charger arrived', 'Battery back to 100%.');
   }
 }
 

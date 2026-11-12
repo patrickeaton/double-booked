@@ -130,7 +130,6 @@ export type Script = { at: number; after?: number } & (
 export interface DayDef {
   title: string;
   subtitle: string;
-  battery: number;
   memo: { from: string; subject: string; body: string };
   execs: ExecId[];
   rules: string[];
@@ -164,7 +163,7 @@ export interface Product {
   emoji: string;
   price: number;
   desc: string;
-  tier: 'cheap' | 'good' | 'lavish' | 'utility';
+  tier: 'cheap' | 'good' | 'lavish';
 }
 
 export interface Drink {
