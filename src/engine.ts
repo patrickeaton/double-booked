@@ -9,6 +9,8 @@ import { generateAdhoc } from './adhoc';
 import type { AppId, CalEvent, Effects, ExecId, Message, MsgDef, Script } from './types';
 
 export const day = () => dayAt(S.dayIndex);
+/** Today's calendars, minus anyone who has left (e.g. Dana after the board vote). */
+export const activeExecs = (): ExecId[] => day().execs.filter((x) => !S.flags.includes(`gone-${x}`));
 export const unlockedApps = (): AppId[] => DAYS.slice(0, S.dayIndex + 1).flatMap((d) => d.apps);
 export const hasApp = (a: AppId) => unlockedApps().includes(a);
 export const isNewApp = (a: AppId) => S.dayIndex > 0 && day().apps.includes(a);
@@ -45,6 +47,7 @@ export function newGame() {
   S.incoming = [];
   S.carry = [];
   S.messages = [];
+  S.kendall = { helped: 0, sabotaged: 0 };
   S.shortcuts = [];
   S.seed = Math.floor(Math.random() * 1e9);
   S.endless = false;
@@ -66,6 +69,7 @@ export function continueGame() {
   S.endless = save.endless ?? false;
   S.savedDrinks = save.savedDrinks ?? [];
   S.messages = save.messages ?? [];
+  S.kendall = save.kendall ?? { helped: 0, sabotaged: 0 };
   S.carry = [];
   setupDay(save.dayIndex);
 }
@@ -103,7 +107,7 @@ export function setupDay(i: number) {
   S.orders = [];
   S.log = [];
   S.call = null;
-  S.queue = [...d.script, ...generateAdhoc(i, d, S.seed + i * 7919, hasApp)].map((s) => ({ ...s })).sort((a, b) => a.at - b.at);
+  S.queue = [...d.script, ...generateAdhoc(i, { ...d, execs: d.execs.filter((x) => !S.flags.includes(`gone-${x}`)) }, S.seed + i * 7919, hasApp)].map((s) => ({ ...s })).sort((a, b) => a.at - b.at);
   bookings.length = 0;
   S.selected = null;
   S.openMail = null;
@@ -302,6 +306,9 @@ function fire(s: Script) {
       if (s.msg) addMessage(s.msg);
       break;
     }
+    case 'kendall':
+      kendallAct(s.mode);
+      break;
     case 'nudge': {
       const ev = findEvent(s.id);
       if (ev && ev.status === 'scheduled' && ev.start !== null && !ev.departed) {
@@ -385,7 +392,7 @@ function startEvent(e: CalEvent) {
 
   for (const id of day().rules) {
     const r = RULES[id];
-    if (r.check(e)) applyEffects(r.penalty, `Broke a rule (${r.short}): ${e.title}`);
+    if (!e.fixed && r.check(e)) applyEffects(r.penalty, `Broke a rule (${r.short}): ${e.title}`);
   }
   if (e.window && e.start !== null && (e.start < e.window[0] || e.start > e.window[1])) {
     applyEffects({ standing: -4 }, `Wrong time for ${e.title}`);
@@ -612,6 +619,7 @@ export interface Issue { icon: string; text: string; bad: boolean }
 
 export function issuesFor(e: CalEvent): Issue[] {
   const out: Issue[] = [];
+  if (e.editedBy && e.status === 'scheduled') out.push({ icon: '✏️', text: `Last edited by ${e.editedBy}`, bad: false });
   if (e.start === null) {
     if (e.window) out.push({ icon: '🕒', text: `Start ${fmt(e.window[0])}–${fmt(e.window[1])}`, bad: false });
     if (e.deadline) out.push({ icon: '⏰', text: `Book before ${fmt(e.deadline)}`, bad: false });
@@ -635,7 +643,7 @@ export function issuesFor(e: CalEvent): Issue[] {
       out.push({ icon: tight ? '🚗' : '⛔', text: tight ? `No travel time around ${clash.title}` : `Clashes with ${clash.title}`, bad: true });
     }
   }
-  for (const id of day().rules) if (RULES[id].check(e)) out.push({ icon: '⚠️', text: RULES[id].short, bad: true });
+  for (const id of day().rules) if (!e.fixed && RULES[id].check(e)) out.push({ icon: '⚠️', text: RULES[id].short, bad: true });
   if (e.window && (s < e.window[0] || s > e.window[1])) out.push({ icon: '🕒', text: `Should start ${fmt(e.window[0])}–${fmt(e.window[1])}`, bad: true });
   if (e.prep) {
     const busy = S.events.some((o) => o !== e && blocks(o) && shares(o, e) && (active(o) || o.status === 'done') && o.start !== null && overlaps(occStart(o), occEnd(o), occStart(e) - e.prep!, occStart(e)));
@@ -678,10 +686,117 @@ export function choose(msgId: string, idx: number) {
   if (!m || !m.choices || m.chosen !== undefined) return;
   m.chosen = idx;
   m.read = true;
-  const c = m.choices[idx];
+  let outcome = idx;
+  if (m.advice && idx !== m.advice.gut) {
+    // Margo listens more when she trusts you.
+    const p = Math.max(0.15, Math.min(0.85, 0.25 + (S.meters.standing - 40) / 100));
+    if (Math.random() > p) outcome = m.advice.gut;
+  }
+  m.outcome = outcome;
+  const c = m.choices[outcome];
   if (c.flag && !S.flags.includes(c.flag)) S.flags.push(c.flag);
-  applyEffects(c.effects, c.log ?? `${m.from}: "${c.label}"`);
+  if (m.advice) {
+    const took = outcome === idx;
+    if (took && idx !== m.advice.gut && !S.flags.includes('advice-taken')) S.flags.push('advice-taken');
+    applyEffects(c.effects, took ? `Margo took your advice: ${c.label}` : `Margo ignored you and went with: ${c.label}`);
+    const replies = took
+      ? idx === m.advice.gut ? ['RIGHT?? great minds 🧠', 'knew you\'d get it 🙌'] : ['ok. you\'re right. doing it 🫡', 'fine. FINE. good call 😤']
+      : ['hmm. love that. going with my gut though 💅', 'noted!! doing the other thing 🙃', 'you make a good point. ignoring it ✨'];
+    addMessage({ app: m.app, from: 'Margo', body: replies[Math.floor(Math.random() * replies.length)] }, true);
+  } else applyEffects(c.effects, c.log ?? `${m.from}: "${c.label}"`);
   queueThen(c.then);
+}
+
+// ───────────────────────────── Kendall, the backup EA ─────────────────────────────
+const KENDALL = 'Kendall (backup EA)';
+const rand = <T,>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)];
+
+function kendallAct(mode: 'help' | 'sabotage') {
+  const now = S.now;
+  const touchable = (e: CalEvent) => e.status === 'scheduled' && e.start !== null && e.start > now + 30 && !e.fixed && !e.departed && e.kind !== 'focus' && !e.attendees.includes('me');
+  const say = (body: string) => addMessage({ app: 'huddle', from: KENDALL, body });
+
+  if (mode === 'help') {
+    const pend = S.events.find((e) => e.status === 'pending' && !e.fixed && !e.attendees.includes('me'));
+    if (pend) {
+      const wasSel = S.selected;
+      const t = bestSlot(pend);
+      if (t !== null) {
+        placeEvent(pend.id, t, true);
+        S.selected = wasSel === pend.id ? null : wasSel;
+        pend.editedBy = 'Kendall';
+        S.kendall.helped++;
+        return say(`booked "${pend.title}" at ${fmt(t)} for you! 😊 no need to thank me`);
+      }
+    }
+    if (hasApp('ryde')) {
+      const r = S.events.find((e) => touchable(e) && travelOf(e) > 0 && !e.withRide);
+      if (r) {
+        toggleAddon(r.id, 'ride');
+        r.editedBy = 'Kendall';
+        S.kendall.helped++;
+        return say(`saw ${execNames(r.attendees)} had no car for "${r.title}" so I booked a Ryde 🚕`);
+      }
+    }
+    const task = S.tasks.find((x) => x.status === 'open' && x.kind === 'coffee' && x.exec);
+    if (task) {
+      orderDrink(EXECS[task.exec!].drink, task.exec!, null);
+      S.kendall.helped++;
+      return say(`sent ${EXECS[task.exec!].short} their usual ☕ you looked busy!`);
+    }
+    return say('anything I can take off your plate? 🙂 genuinely here to help');
+  }
+
+  // Sabotage: quietly make you look bad.
+  const pool = S.events.filter(touchable);
+  if (!pool.length) return;
+  const e = rand(pool);
+  const others = S.events.filter((o) => o !== e && o.status === 'scheduled' && o.start !== null && o.start > now + 15 && o.attendees.some((a) => e.attendees.includes(a)));
+  const options: (() => string | null)[] = [
+    () => {
+      const o = others.length ? rand(others) : null;
+      if (!o) return null;
+      e.start = o.start;
+      return `moved "${e.title}"`;
+    },
+    () => {
+      if (!e.withRide) return null;
+      e.withRide = false;
+      e.rideTo = undefined;
+      return `cancelled the ride for "${e.title}"`;
+    },
+    () => {
+      const min = e.minOk ?? e.duration;
+      if (e.duration <= 15) return null;
+      e.duration = Math.max(15, min - 15);
+      return `trimmed "${e.title}"`;
+    },
+  ];
+  for (const f of options.sort(() => Math.random() - 0.5)) {
+    const what = f();
+    if (!what) continue;
+    e.editedBy = 'Kendall';
+    e.fresh = true;
+    S.kendall.sabotaged++;
+    if (!S.flags.includes('kendall-sabotaged')) S.flags.push('kendall-sabotaged');
+    if (Math.random() < 0.5) say(`tidied up ${execNames(e.attendees)}'s calendar a little ✨ you're welcome!`);
+    if (Math.random() < 0.5) {
+      S.queue.push({
+        at: now + 12, type: 'msg',
+        msg: {
+          app: 'huddle', from: 'Wren', body: `psst. saw Kendall in ${execNames(e.attendees)}'s calendar just now. "${e.title}" looks… different 👀`, expiresIn: 40,
+          timeoutEffects: {}, timeoutLog: 'Ignored the Kendall tip.',
+          choices: [
+            { label: 'Tell Bev', effects: { standing: 2, stress: 2 }, flag: 'kendall-reported', log: 'Reported Kendall to Bev. Bev opened her folder.' },
+            { label: 'Confront Kendall', effects: { stress: 4 }, flag: 'kendall-confronted', log: 'Kendall: "omg I was just trying to help?? 🥺"' },
+            { label: 'Let it go', effects: { stress: 2 } },
+          ],
+        },
+      });
+      S.queue.sort((a, b) => a.at - b.at);
+    }
+    return;
+  }
 }
 
 function queueThen(then?: Script[]) {
@@ -922,7 +1037,7 @@ export function endDay() {
   const newStrikes: string[] = [];
 
   for (const r of day().reckonings ?? []) {
-    if (!S.flags.includes(r.flag)) continue;
+    if (!S.flags.includes(r.flag) || (r.unless && S.flags.includes(r.unless))) continue;
     notes.push(r.text);
     applyEffects(r.effects, r.text, true);
     if (r.strike) newStrikes.push(r.text);

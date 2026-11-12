@@ -1,4 +1,5 @@
-export type ExecId = 'margo' | 'theo';
+/** Calendars you manage: the bosses, plus your own and the company-wide one. */
+export type ExecId = 'margo' | 'theo' | 'dana' | 'me' | 'team';
 export type Meter = 'standing' | 'runway' | 'morale' | 'stress';
 export type Effects = Partial<Record<Meter, number>>;
 export type AppId = 'calendar' | 'mail' | 'huddle' | 'messages' | 'brew' | 'bundl' | 'card' | 'notes' | 'ryde' | 'tably' | 'presto';
@@ -74,6 +75,8 @@ export interface CalEvent {
   note?: string;
   status: EventStatus;
   fresh?: boolean;
+  /** Someone else touched this meeting (Kendall). */
+  editedBy?: string;
   /** Flag set when this meeting happens. */
   flagOnDone?: string;
 }
@@ -103,6 +106,8 @@ export interface MsgDef {
   subject?: string;
   body: string;
   choices?: Choice[];
+  /** Margo asks your advice. `gut` is what she leans towards; she may ignore you and do that instead. */
+  advice?: { gut: number };
   expiresIn?: number;
   timeoutEffects?: Effects;
   timeoutLog?: string;
@@ -115,6 +120,8 @@ export interface Message extends MsgDef {
   /** Which day it arrived (older ones stay in the inbox as history). */
   day?: number;
   chosen?: number; // -1 = timed out
+  /** For advice: which option actually happened. */
+  outcome?: number;
   expires?: number;
 }
 
@@ -172,6 +179,8 @@ export type Script = { at: number; after?: number; when?: ScriptCond } & (
   | { type: 'nudge'; id: string; by: number; msg?: MsgDef }
   | { type: 'call'; call: CallDef }
   | { type: 'reveal'; flag: string }
+  /** Kendall, the backup EA, touches the calendars: mostly helpful, sometimes not. */
+  | { type: 'kendall'; mode: 'help' | 'sabotage' }
   | { type: 'effects'; effects: Effects; log: string; msg?: MsgDef }
 );
 
@@ -191,7 +200,7 @@ export interface DayDef {
   events: EventDef[];
   script: Script[];
   /** Flags checked overnight: consequences that catch up with you. */
-  reckonings?: { flag: string; text: string; effects: Effects; strike?: boolean }[];
+  reckonings?: { flag: string; unless?: string; text: string; effects: Effects; strike?: boolean }[];
 }
 
 export interface Order {

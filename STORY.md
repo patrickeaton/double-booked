@@ -36,6 +36,37 @@ Hand-written beats live in `src/days.ts`. Everything else comes from the seeded 
 
 After Day 14 (or straight from the title screen) comes **Endless mode**: every app unlocked, no story, and weekdays get busier every couple of days.
 
+## Calendars
+
+| From | Calendar | Notes |
+|---|---|---|
+| Day 1 | Margo | CEO. Nothing before 10am. |
+| Day 2 | Theo | CTO. 1–5pm focus block. |
+| Day 3 | **You** | Lighter, but personal: your lunch, errands, the flat, Mum. Skipping your own stuff costs stress. |
+| Day 6 | **Team** | Company-wide: standup, all-hands, Friday Wins. |
+| Day 8 | **Dana** (interim COO) | The board's person. No meeting over 30 min. Leaves after the vote if you backed Margo. |
+
+## Kendall, the backup EA (from Day 8)
+
+Mostly helpful: books pending requests, books missing rides, orders the right coffee. About 30% of the time, Kendall quietly sabotages instead: moves a meeting into a clash, cancels a ride, or trims a meeting too short. Edited meetings show ✏️. Wren sometimes tips you off: tell Bev, confront Kendall, or let it go. On Day 14, reporting a guilty Kendall pays off; reporting an innocent one backfires; never catching a guilty one costs you at the review.
+
+## Margo asks for advice
+
+From Day 3, Margo asks what to do (outfits, telling the team about money, dragging Theo out of an incident, calling Gerald). She has a gut answer. If you advise against it, she follows you more often the higher your standing; otherwise she does her own thing and you live with it.
+
+## Your own life (the You calendar)
+
+| Day | Beat |
+|---|---|
+| 3 Fri | Ollie: the landlord is selling the flat. 3 weeks to move out. |
+| 5 Sun | Jules found a flat with a bath. Viewing Monday 12:30. |
+| 6 Mon | Viewing at 12:30… and Margo books you to take notes at 12:30. |
+| 7 Tue | Mum: tests, results Thursday. "Call me Thursday." |
+| 9 Thu | Call Mum (12–2pm) during diligence day. |
+| 10 Fri | Jules' birthday. |
+| 11 Sat | They offered the flat. Sign now, or wait for your review? |
+| 13 Mon | If you signed: the lease signing is 12:30, in person, on board day. |
+
 ## Flags that matter
 
 `kestrel-met` · `funded` · `backed-margo` / `honest-gerald` / `theo-ceo` · `margo-ousted` · `theo-talk` / `leafly-told` · `theo-stays` / `theo-leaves` · `missed-birthday` / `went-birthday` / `apologized` · `lied-to-sam` · `wren-quits` · `leafly-you`

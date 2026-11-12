@@ -1,6 +1,6 @@
 // The ad-hoc pool: small requests, errands and dilemmas drawn at random each day,
 // on top of the day's hand-written story beats. Seeded, so retrying a day replays the same draw.
-import { TABLE_TIMES, fmt, t } from './data';
+import { TABLE_TIMES, fmt, isBoss, t } from './data';
 import type { AppId, Choice, DayDef, Effects, EventDef, ExecId, InboxApp, Script } from './types';
 
 type Rng = () => number;
@@ -173,6 +173,31 @@ const CALLS = [
   },
 ];
 
+const DANA_MEETINGS: MeetT[] = [
+  { key: 'audit', from: 'Dana Reyes', app: 'mail', title: 'Process audit · Dana', body: '{dur} with {exec} before {by}. Agenda attached. (The agenda is: why.)', who: 'dana', dur: [30], stakes: 'mid' },
+  { key: 'contracts', from: 'Dana Reyes', app: 'mail', title: 'Vendor contracts · Dana', body: 'Need {dur} before {by} to review vendor contracts. Someone signed one with a llama farm.', who: 'dana', dur: [30], stakes: 'mid' },
+  { key: 'okr', from: 'Dana Reyes', app: 'huddle', title: 'OKR alignment · Dana & Margo', body: '{dur} with Margo before {by}. We need OKRs. Margo thinks OKR is a yoga pose.', who: 'dana', dur: [30], stakes: 'high' },
+];
+
+/** Your own errands: they land on your calendar and need doing during work hours. */
+const ERRANDS: { title: string; body: string; from: string; dur: number; travel?: [number, string] }[] = [
+  { title: 'Call landlord re: the leak 🔧', body: 'the ceiling is dripping. like ACTIVELY. can you call the landlord today?? 15 mins before {by} pls', from: 'Ollie (flatmate)', dur: 15 },
+  { title: 'Pharmacy run 💊', body: 'your prescription is ready for pickup! (closes early today: {by})', from: 'Pharmacy 💊', dur: 15, travel: [10, 'Pharmacy'] },
+  { title: 'Call the bank back 🏦', body: 'Please call us back today before {by} regarding "unusual activity" (it was the kombucha).', from: 'Your bank', dur: 15 },
+  { title: 'Sign for a parcel 📦', body: "there's a parcel for you that needs a signature. I'm not home. are you? 😬 before {by}", from: 'Ollie (flatmate)', dur: 15, travel: [10, 'home'] },
+];
+
+/** Margo asks your advice. `gut` is what she leans towards anyway. */
+const ADVICE: { body: string; gut: number; choices: Choice[] }[] = [
+  { body: 'should I reply-all to the investor thread with a gif? it is a GOOD gif', gut: 1, choices: [{ label: 'No gif.', effects: { standing: 1 } }, { label: 'Send the gif', effects: { standing: -4 } }] },
+  { body: 'Wren wants to rebrand. again. do I let them?', gut: 0, choices: [{ label: 'Let them', effects: { morale: 5, runway: -500 } }, { label: 'Not now', effects: { morale: -3 } }] },
+  { body: 'thinking of announcing a 4-day week. thoughts?? 🌴', gut: 0, choices: [{ label: 'Love it', effects: { morale: 8, standing: -4 } }, { label: 'After funding', effects: { standing: 2, morale: -2 } }] },
+  { body: 'Theo wants to rewrite everything in Rust. yes??', gut: 1, choices: [{ label: 'Let him', effects: { morale: 4, runway: -1500 } }, { label: 'Absolutely not', effects: { morale: -4 } }] },
+  { body: 'the podcast guy who yells wants me back. do I go', gut: 0, choices: [{ label: 'Go', effects: { standing: -3 } }, { label: 'Skip it', effects: { standing: 1 } }] },
+  { body: 'a journalist wants a quote on "do plants have feelings". do I say yes', gut: 0, choices: [{ label: '"Yes, deeply."', effects: { standing: -2, runway: 600 } }, { label: 'Keep it vague', effects: { standing: 2 } }] },
+  { body: 'should I fly to the conference or do the keynote over video 🎤', gut: 0, choices: [{ label: 'Fly there', effects: { standing: 4, runway: -900 } }, { label: 'Video', effects: { standing: -1 } }] },
+];
+
 const WEEKEND: { from: string; app: InboxApp; body: string; choices: Choice[]; timeout: Effects; timeoutLog: string }[] = [
   {
     from: 'Margo', app: 'huddle', body: 'r u up? quick q about monday. ok not quick. ok it\'s 6 questions',
@@ -224,17 +249,20 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
   const used = new Set<string>();
   const kinds: [string, number][] = [
     ['meeting', 4], ['dilemma', 3], ['call', 1], ['self', 1],
+    ...(d.execs.includes('me') ? [['errand', 1.5] as [string, number]] : []),
+    ...(d.execs.includes('margo') && dayIndex >= 2 ? [['advice', 1.5] as [string, number]] : []),
     ...(has('brew') ? [['coffee', 1] as [string, number]] : []),
     ...(has('bundl') ? [['gift', 1] as [string, number]] : []),
     ...(has('tably') ? [['table', 1] as [string, number]] : []),
   ];
   const total = kinds.reduce((a, [, w]) => a + w, 0);
+  const bosses: ExecId[] = d.execs.filter(isBoss);
   const execAt = (who: ExecId | 'any' | 'both'): ExecId[] | null => {
-    if (who === 'both') return d.execs.length > 1 ? [...d.execs] : null;
-    if (who === 'any') return [pick(r, d.execs)];
-    return d.execs.includes(who) ? [who] : null;
+    if (who === 'both') return bosses.length > 1 ? bosses.filter((x) => x !== 'dana') : null;
+    if (who === 'any') return [pick(r, bosses)];
+    return bosses.includes(who) ? [who] : null;
   };
-  const names = (xs: ExecId[]) => xs.map((x) => (x === 'margo' ? 'Margo' : 'Theo')).join(' & ');
+  const names = (xs: ExecId[]) => xs.map((x) => ({ margo: 'Margo', theo: 'Theo', dana: 'Dana', me: 'you', team: 'everyone' })[x]).join(' & ');
 
   for (const at of times) {
     let kind = 'dilemma';
@@ -242,7 +270,7 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
     for (const [k, w] of kinds) { if ((roll -= w) < 0) { kind = k; break; } }
 
     if (kind === 'meeting') {
-      const opts = MEETINGS.filter((m) => !used.has(m.key) && execAt(m.who));
+      const opts = [...MEETINGS, ...DANA_MEETINGS].filter((m) => !used.has(m.key) && execAt(m.who));
       if (!opts.length) continue;
       const m = pick(r, opts);
       used.add(m.key);
@@ -291,7 +319,7 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
       used.add(c.from);
       out.push({ at, type: 'call', call: { ...c } });
     } else if (kind === 'self') {
-      const opts = SELF_BOOKS.filter((s) => !used.has(s.title) && d.execs.includes(s.who));
+      const opts = SELF_BOOKS.filter((s) => !used.has(s.title) && bosses.includes(s.who));
       if (!opts.length) continue;
       const s = pick(r, opts);
       used.add(s.title);
@@ -299,17 +327,17 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
       out.push({
         at, type: 'insert',
         event: { id: id(), title: s.title, attendees: [s.who], start, duration: 30, kind: s.kind, bumpPenalty: { standing: -3 }, reward: { morale: 1 }, missPenalty: { standing: -4 }, declinePenalty: { standing: -4 }, note: 'They booked this themselves.' },
-        msg: { app: 'huddle', from: s.who === 'margo' ? 'Margo' : 'Theo', body: s.body.replace('{at}', fmt(start)) },
+        msg: { app: 'huddle', from: names([s.who]), body: s.body.replace('{at}', fmt(start)) },
       });
     } else if (kind === 'coffee') {
       if (used.has('coffee')) continue;
       used.add('coffee');
-      const x = pick(r, d.execs);
+      const x = pick(r, bosses);
       const by = at + 40;
       out.push({
         at, type: 'task',
-        task: { id: id(), kind: 'coffee', exec: x, text: `Get ${x === 'margo' ? 'Margo' : 'Theo'} a coffee (by ${fmt(by)})`, deadline: by, reward: x === 'margo' ? { standing: 3 } : { morale: 4 }, fail: x === 'margo' ? { standing: -3 } : { morale: -3 } },
-        msg: { app: 'huddle', from: x === 'margo' ? 'Margo' : 'Theo', body: x === 'margo' ? 'coffee. please. my usual. I am a husk ☕' : 'Coffee would be good. The usual. Thank you. (Help.)' },
+        task: { id: id(), kind: 'coffee', exec: x, text: `Get ${names([x])} a coffee (by ${fmt(by)})`, deadline: by, reward: x === 'margo' ? { standing: 3 } : { morale: 4 }, fail: x === 'margo' ? { standing: -3 } : { morale: -3 } },
+        msg: { app: 'huddle', from: names([x]), body: x === 'margo' ? 'coffee. please. my usual. I am a husk ☕' : x === 'dana' ? 'Coffee. My usual. Please confirm receipt.' : 'Coffee would be good. The usual. Thank you. (Help.)' },
       });
     } else if (kind === 'gift') {
       const opts = GIFTS.filter((g) => !used.has(g.to));
@@ -321,6 +349,28 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
         task: { id: id(), kind: 'gift', text: g.text, recipient: g.to, budget: g.budget, deadline: Math.min(at + 150, t('17:30')), reward: { standing: 3 }, fail: { standing: -3 } },
         msg: { app: 'huddle', from: g.from, body: g.body },
       });
+    } else if (kind === 'errand') {
+      const opts = ERRANDS.filter((x) => !used.has(x.title));
+      if (!opts.length) continue;
+      const x = pick(r, opts);
+      used.add(x.title);
+      const by = Math.min(q15(at + 120 + r() * 90), t('17:30'));
+      out.push({
+        at, type: 'request',
+        event: {
+          id: id(), title: x.title, attendees: ['me'], start: null, duration: x.dur, deadline: by, kind: 'personal',
+          travel: x.travel?.[0], place: x.travel?.[1],
+          reward: { stress: -3 }, missPenalty: { stress: 6 }, declinePenalty: { stress: 3 }, bumpPenalty: { stress: 2 },
+          note: `Your own errand. Before ${fmt(by)}.`,
+        },
+        msg: { app: 'messages', from: x.from, body: x.body.replace('{by}', fmt(by)) },
+      });
+    } else if (kind === 'advice') {
+      const opts = ADVICE.filter((x) => !used.has(x.body));
+      if (!opts.length) continue;
+      const x = pick(r, opts);
+      used.add(x.body);
+      out.push({ at, type: 'msg', msg: { app: 'huddle', from: 'Margo', body: x.body, choices: x.choices, advice: { gut: x.gut }, expiresIn: 40, timeoutEffects: { standing: -2 }, timeoutLog: 'Margo asked for advice. You were busy. She did her own thing.' } });
     } else if (kind === 'table') {
       if (used.has('table')) continue;
       used.add('table');
@@ -333,6 +383,13 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
         task: { id: id(), kind: 'reservation', text: `Dinner with ${who}: ${party} people, ${fmt(win[0])}–${fmt(win[1])}`, party, window: win, deadline: Math.min(at + 150, t('17:30')), reward: { standing: 3 }, fail: { standing: -4 } },
         msg: { app: 'huddle', from: 'Margo', body: `dinner w/ ${who} tonight!! ${party} of us, ${fmt(win[0])}–${fmt(win[1])}. somewhere nice. Tably it 🍽️` },
       });
+    }
+  }
+  // Kendall (from Day 8): mostly helpful, sometimes not.
+  if (dayIndex >= 7) {
+    const k = 2 + (r() < 0.5 ? 1 : 0);
+    for (let i = 0; i < k; i++) {
+      out.push({ at: t('9:40') + Math.floor(r() * (t('16:00') - t('9:40'))), type: 'kendall', mode: r() < 0.3 ? 'sabotage' : 'help' });
     }
   }
   return out;

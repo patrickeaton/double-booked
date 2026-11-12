@@ -50,6 +50,8 @@ export interface GameState {
   savedDrinks: string[];
   /** Past Day 14: generated days, no ending. */
   endless: boolean;
+  /** Kendall's track record (for the review and the ending). */
+  kendall: { helped: number; sabotaged: number };
   toasts: Toast[];
   sheet: Sheet | null;
   review: Review | null;
@@ -88,6 +90,7 @@ export const S: GameState = {
   seed: 1,
   savedDrinks: [],
   endless: false,
+  kendall: { helped: 0, sabotaged: 0 },
   toasts: [],
   sheet: null,
   review: null,
@@ -156,11 +159,11 @@ export function addStrike(note: string) {
 
 // ───────────── save / load ─────────────
 const KEY = 'double-booked-save-v1';
-export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[]; shortcuts?: Shortcut[]; seed?: number; endless?: boolean; savedDrinks?: string[]; messages?: Message[] }
+export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[]; shortcuts?: Shortcut[]; seed?: number; endless?: boolean; savedDrinks?: string[]; messages?: Message[]; kendall?: { helped: number; sabotaged: number } }
 
 export function writeSave() {
   try {
-    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming, shortcuts: S.shortcuts, seed: S.seed, endless: S.endless, savedDrinks: S.savedDrinks, messages: S.messages };
+    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming, shortcuts: S.shortcuts, seed: S.seed, endless: S.endless, savedDrinks: S.savedDrinks, messages: S.messages, kendall: S.kendall };
     localStorage.setItem(KEY, JSON.stringify(s));
   } catch {
     /* storage may be unavailable */

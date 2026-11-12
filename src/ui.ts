@@ -1,9 +1,9 @@
 import { DAYS, dayAt } from './days';
 import { STEP_LABEL, drinkEmoji, drinkName, drinkPrice, optionsFor, specString, stepsFor, type DrinkSpec, type Step } from './drinks';
-import { CAL_END, CAL_START, DAY_END, EXECS, PAYROLL, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, TABLE_TIMES, fmt } from './data';
+import { CAL_END, CAL_START, DAY_END, EXECS, isBoss, PAYROLL, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, TABLE_TIMES, fmt } from './data';
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
-  minStart, newGame, nextDay, hasApp, isNewApp, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
+  minStart, newGame, nextDay, hasApp, isNewApp, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
   toggleSpeed, unschedule,
 } from './engine';
 import { MAX_SHORTCUTS, addShortcut, removeShortcut, runShortcut, shortcutLabel } from './shortcuts';
@@ -73,7 +73,8 @@ export function mountUI(root: HTMLElement) {
 
 function keepScroll(container: HTMLElement, build: () => void) {
   const saved = new Map<string, number>();
-  container.querySelectorAll<HTMLElement>('[data-keep]').forEach((el) => saved.set(el.dataset.keep!, el.scrollTop));
+  const savedX = new Map<string, number>();
+  container.querySelectorAll<HTMLElement>('[data-keep]').forEach((el) => { saved.set(el.dataset.keep!, el.scrollTop); savedX.set(el.dataset.keep!, el.scrollLeft); });
   build();
   container.querySelectorAll<HTMLElement>('[data-keep]').forEach((el) => {
     const k = el.dataset.keep!;
@@ -86,6 +87,7 @@ function keepScroll(container: HTMLElement, build: () => void) {
         return;
       }
     }
+    if (savedX.get(k)) el.scrollLeft = savedX.get(k)!;
     if (saved.has(k)) el.scrollTop = saved.get(k)!;
     else if (el.dataset.initial) el.scrollTop = Number(el.dataset.initial);
   });
@@ -237,7 +239,7 @@ function renderDock(isSplit: boolean) {
 // ───────────────────────────── calendar ─────────────────────────────
 function renderCalendar() {
   const d = day();
-  const execs = d.execs;
+  const execs = activeExecs();
   const pending = S.events.filter((e) => e.status === 'pending');
   const sel = findEvent(S.selected);
 
@@ -303,9 +305,11 @@ function renderCalendar() {
 
   const initial = S.phase === 'day' ? Math.max(0, (S.now - CAL_START - 45) * PX) : 0;
   const scroller = h('div', { class: 'cal-scroll', 'data-keep': 'cal', 'data-initial': initial },
-    h('div', { class: 'cal-grid', style: `height:${height}px` }, gutter, ...cols));
+    h('div', { class: 'cal-inner', style: `--n:${execs.length}` },
+      heads,
+      h('div', { class: 'cal-grid', style: `height:${height}px` }, gutter, ...cols)));
 
-  return h('div', { class: `app cal ${sel ? 'placing' : ''}` }, header, tray, selBar, heads, scroller);
+  return h('div', { class: `app cal ${sel ? 'placing' : ''}` }, header, tray, selBar, scroller);
 }
 
 const t9 = () => 9 * 60;
@@ -360,6 +364,7 @@ function renderBlock(e: CalEvent) {
   const small = e.duration * PX < 34;
   const cls = ['evt', `st-${e.status}`, `k-${e.kind ?? 'meeting'}`, bad ? 'has-issue' : '', S.selected === e.id ? 'selected' : '', movable ? 'movable' : '', small ? 'small' : '', e.attendees.length > 1 ? 'multi' : '', e.fresh ? 'fresh' : ''].join(' ');
   const el = h('div', { class: cls, style: `top:${(start - CAL_START) * PX}px;height:${Math.max(16, e.duration * PX - 2)}px;--c:${EXECS[e.attendees[0]].color}` },
+    e.editedBy && e.status === 'scheduled' && h('span', { class: 'edited-mark', title: `Edited by ${e.editedBy}` }, '✏️'),
     h('div', { class: 'evt-title' }, e.status === 'missed' ? '💥 ' : e.status === 'done' ? '✓ ' : '', e.title),
     !small && h('div', { class: 'evt-time' }, `${fmt(start)}–${fmt(start + e.duration)}`, e.overranBy ? ` (+${e.overranBy}m)` : ''),
     !small && h('div', { class: 'evt-issues' },
@@ -533,10 +538,16 @@ const avatarColor = (name: string) => {
 function choiceButtons(m: (typeof S.messages)[number]) {
   if (!m.choices) return null;
   if (m.chosen !== undefined) {
-    return h('div', { class: 'reply' }, m.chosen === -1 ? h('i', { class: 'muted' }, 'No reply. (Too late.)') : `You: ${m.choices[m.chosen].label}`);
+    if (m.chosen === -1) return h('div', { class: 'reply' }, h('i', { class: 'muted' }, 'No reply. (Too late.)'));
+    if (m.advice && m.outcome !== undefined) {
+      return h('div', { class: 'reply' }, `You advised: ${m.choices[m.chosen].label}`,
+        h('div', { class: `small ${m.outcome === m.chosen ? 'pos' : 'neg'}` }, m.outcome === m.chosen ? '✓ She listened.' : `✗ She went with: ${m.choices[m.outcome].label}`));
+    }
+    return h('div', { class: 'reply' }, `You: ${m.choices[m.chosen].label}`);
   }
   const left = m.expires !== undefined && S.phase === 'day' ? Math.max(0, m.expires - S.now) : null;
   return h('div', { class: 'choices' },
+    m.advice && h('div', { class: 'small muted' }, '🤔 Margo wants your advice. She may not take it.'),
     left !== null && h('div', { class: 'expires' }, `⏳ needs an answer in ${left} min`),
     ...m.choices.map((c, i) => h('button', { class: 'btn choice', onclick: () => choose(m.id, i) }, c.label)),
   );
@@ -750,7 +761,7 @@ let brewFor: string = 'margo';
 let brewAt: number | null = null; // null = ASAP
 
 function renderBrew() {
-  const execs = day().execs;
+  const execs = activeExecs().filter(isBoss);
   if (brewFor !== 'me' && !execs.includes(brewFor as ExecId)) brewFor = execs[0];
   const known = (x: ExecId) => S.flags.includes(`drink-${x}`);
   const orders = S.orders.filter((o) => o.app === 'brew').slice().reverse();
@@ -845,7 +856,7 @@ function renderNotes() {
       h('h4', {}, "Today's rules"),
       ...d.rules.map((r) => h('div', { class: 'rule' }, '📌 ', RULES[r].text)),
       h('h4', {}, 'Dossier'),
-      ...d.execs.map((x) => {
+      ...activeExecs().filter(isBoss).map((x) => {
         const e = EXECS[x];
         return h('div', { class: 'dossier', style: `--c:${e.color}` },
           h('div', { class: 'dossier-head' }, h('span', { class: 'avatar' }, e.emoji), h('div', {}, h('b', {}, e.name), h('div', { class: 'muted small' }, e.title))),
@@ -922,7 +933,7 @@ function renderPresto() {
       h('h4', {}, 'New shortcut'),
       h('div', { class: 'seg' }, ...kinds.map((k) => h('button', { class: `seg-btn ${pfKind === k ? 'on' : ''}`, onclick: () => { pfKind = k; dirty(); } }, k === 'coffee' ? '☕ Coffee' : k === 'gift' ? '📦 Gift' : '🚕 Ride'))),
       pfKind === 'coffee' && h('div', { class: 'sc-build' },
-        h('div', { class: 'seg' }, ...(Object.keys(EXECS) as ExecId[]).filter((x) => DAYS.slice(0, S.dayIndex + 1).some((d) => d.execs.includes(x)) || S.endless).map((x) =>
+        h('div', { class: 'seg' }, ...(Object.keys(EXECS) as ExecId[]).filter((x) => isBoss(x) && (DAYS.slice(0, S.dayIndex + 1).some((d) => d.execs.includes(x)) || S.endless)).map((x) =>
           h('button', { class: `seg-btn ${pfTo === x ? 'on' : ''}`, onclick: () => { pfTo = x; dirty(); } }, `${EXECS[x].emoji} ${EXECS[x].short}`))),
         (() => {
           const usual = S.flags.includes(`drink-${pfTo}`) ? EXECS[pfTo].drink : null;
@@ -940,7 +951,7 @@ function renderPresto() {
         h('p', { class: 'muted small' }, 'Sends to whoever is waiting on a gift.'),
       ),
       pfKind === 'ride' && h('div', { class: 'sc-build' },
-        h('div', { class: 'seg' }, ...(Object.keys(EXECS) as ExecId[]).filter((x) => DAYS.slice(0, S.dayIndex + 1).some((d) => d.execs.includes(x)) || S.endless).map((x) =>
+        h('div', { class: 'seg' }, ...(Object.keys(EXECS) as ExecId[]).filter((x) => isBoss(x) && (DAYS.slice(0, S.dayIndex + 1).some((d) => d.execs.includes(x)) || S.endless)).map((x) =>
           h('button', { class: `seg-btn ${pfTo === x ? 'on' : ''}`, onclick: () => { pfTo = x; dirty(); } }, `${EXECS[x].emoji} ${EXECS[x].short}`))),
         h('div', { class: 'seg' }, ...(['book', 'reroute', 'cancel'] as RideAction[]).map((a) =>
           h('button', { class: `seg-btn ${pfRide === a ? 'on' : ''}`, onclick: () => { pfRide = a; dirty(); } }, a === 'book' ? '🚕 Book' : a === 'reroute' ? '🔁 Re-route' : '✖️ Cancel'))),
@@ -996,6 +1007,14 @@ function renderMemo() {
       h('h4', {}, S.dayIndex === 0 ? 'Your apps' : '📲 New apps unlocked'),
       ...APPS.filter((a) => d.apps.includes(a.id)).map((a) =>
         h('div', { class: 'new-app' }, h('span', { class: 'app-icon sm', style: `background:${a.color}` }, a.icon), h('div', {}, h('b', {}, a.name), h('div', { class: 'small muted' }, a.desc))))),
+    (() => {
+      const prev = S.dayIndex > 0 ? dayAt(S.dayIndex - 1).execs : [];
+      const fresh = d.execs.filter((x) => !prev.includes(x));
+      return fresh.length > 0 && h('div', { class: 'new-apps' },
+        h('h4', {}, S.dayIndex === 0 ? 'Your calendars' : '📅 New calendar to manage'),
+        ...fresh.map((x) => h('div', { class: 'new-app' }, h('span', { class: 'avatar', style: `--c:${EXECS[x].color}` }, EXECS[x].emoji),
+          h('div', {}, h('b', {}, `${EXECS[x].name} · ${EXECS[x].title}`), h('div', { class: 'small muted' }, EXECS[x].quirks[0])))));
+    })(),
     d.rules.length > 0 && h('div', { class: 'rules' }, h('h4', {}, "Today's rules"), ...d.rules.map((r) => h('div', { class: 'rule' }, '📌 ', RULES[r].text))),
     ),
     h('div', { class: 'cs-foot' },
@@ -1067,6 +1086,11 @@ function epilogue(): string[] {
   if (f('wren-quits')) out.push('🎨 Wren left to make logos for a kombucha brand. Margo is their first customer.');
   if (f('lied-to-sam') && !f('funded')) out.push('😬 Sam found out you knew. Sam has unfollowed you on everything.');
   if (f('leafly-you')) out.push('📞 Leafly still calls you. Every quarter. Like clockwork.');
+  out.push(f('gone-dana') ? '📋 Dana left the day of the vote. Her agendas are still in the shared drive. Unread.' : f('honest-gerald') ? '📋 Dana is permanent COO. She and Margo book separate rooms.' : '📋 Dana is still "interim". Nobody knows what that means anymore.');
+  if (f('kendall-reported') && f('kendall-sabotaged')) out.push('🗂️ Kendall works on "special projects" now. The printer is very well organised.');
+  else if (f('kendall-sabotaged')) out.push('🗂️ Kendall is still your "backup". Watch the calendar.');
+  out.push(f('got-flat') ? '🏠 You and Jules got the flat. It has a bath. You have used it twice.' : f('signed-flat') ? '🏠 You missed the lease signing. Someone else has the flat with the bath.' : '🏠 You and Jules are still flat-hunting. Ollie has moved into a van.');
+  if (!f('called-mum')) out.push("📞 You call Mum every Thursday now. You've only missed one.");
   return out;
 }
 

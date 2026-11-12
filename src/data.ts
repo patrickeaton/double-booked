@@ -48,7 +48,44 @@ export const EXECS: Record<ExecId, Exec> = {
       'Loves vendor demos. Vendor demos are long.',
     ],
   },
+  dana: {
+    id: 'dana',
+    name: 'Dana Reyes',
+    short: 'Dana',
+    title: 'Interim COO',
+    color: '#14a38b',
+    emoji: '📋',
+    drink: 'americano|none|iced|double|none',
+    quirks: [
+      'Installed by the board. Reports to Gerald. Allegedly.',
+      'No meeting over 30 minutes. Ever.',
+      'Will ask for the agenda. There is no agenda.',
+    ],
+  },
+  me: {
+    id: 'me',
+    name: 'You',
+    short: 'You',
+    title: 'Executive Assistant',
+    color: '#8a8fa8',
+    emoji: '🙋',
+    drink: 'latte|whole|hot|single|none',
+    quirks: ['Your own calendar. Lighter. Somehow still a mess.', 'Skipping your own lunch counts. Your stress will tell you.'],
+  },
+  team: {
+    id: 'team',
+    name: 'Sproutly (everyone)',
+    short: 'Team',
+    title: 'Company-wide',
+    color: '#e3a008',
+    emoji: '🌱',
+    drink: '',
+    quirks: ['All-hands, fire drills, Friday Wins. Everyone is meant to be there.'],
+  },
 };
+
+/** The people who boss you around (not your own calendar, not the team one). */
+export const isBoss = (x: ExecId): boolean => x === 'margo' || x === 'theo' || x === 'dana';
 
 
 export const PRODUCTS: Product[] = [
@@ -70,6 +107,13 @@ export const RESTAURANTS: Restaurant[] = [
 export const TABLE_TIMES = [t('18:30'), t('19:00'), t('19:30'), t('20:00'), t('20:30')];
 
 export const RULES: Record<string, Rule> = {
+  danaShort: {
+    id: 'danaShort',
+    text: 'Dana: no meeting with her may run over 30 minutes.',
+    short: 'Dana over 30 min',
+    penalty: { standing: -3 },
+    check: (ev) => ev.attendees.includes('dana') && !ev.fixed && ev.kind !== 'personal' && ev.duration > 30,
+  },
   margoMorning: {
     id: 'margoMorning',
     text: 'Margo: no meetings before 10am (standup excepted).',

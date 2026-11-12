@@ -14,6 +14,16 @@ const tlunch = (d: string, at = '12:00'): EventDef => ({
   reward: { morale: 2 }, missPenalty: { morale: -4 }, declinePenalty: { morale: -4 },
 });
 const WEEKDAY_RULES = ['margoMorning', 'theoFocus', 'max60'];
+const WEEK2_RULES = [...WEEKDAY_RULES, 'danaShort'];
+const W1: ExecId[] = ['margo', 'theo', 'me'];
+const W1T: ExecId[] = ['margo', 'theo', 'team', 'me'];
+const ALL: ExecId[] = ['margo', 'theo', 'dana', 'team', 'me'];
+/** Company-wide standup lives on the Team calendar once there is one. */
+const teamStandup = (d: string, who: ExecId[] = ['team', 'margo', 'theo', 'me']): EventDef => standup(d, who);
+const myLunch = (d: string): EventDef => ({
+  id: `${d}-melunch`, proposed: t('13:00'), title: 'Your lunch 🥪', minOk: 15, attendees: ['me'], start: null, duration: 30, kind: 'personal', window: [t('12:00'), t('14:30')],
+  reward: { stress: -4 }, missPenalty: { stress: 6 }, declinePenalty: { stress: 5 }, note: 'Yours. You are allowed to eat.',
+});
 const weekendMemo = (subject: string, body: string) => ({ from: 'Your phone 📱', subject, body });
 
 export const DAYS: DayDef[] = [
@@ -195,9 +205,9 @@ export const DAYS: DayDef[] = [
       from: 'Bev (People Ops)',
       subject: 'Happy Friday! 🎉 (+ some apps)',
       body:
-        "You made it to Friday! IT came through: you now have Bundl (shopping), the company Card, and Presto ⚡ (one-tap shortcuts — set them up now, tap them later).\n\nFriday Wins is at 4:30. Attendance is \"optional\". It is not optional.",
+        "You made it to Friday! You also get your own calendar now (lighter, but yours to protect). IT came through: you now have Bundl (shopping), the company Card, and Presto ⚡ (one-tap shortcuts — set them up now, tap them later).\n\nFriday Wins is at 4:30. Attendance is \"optional\". It is not optional.",
     },
-    execs: ['margo', 'theo'],
+    execs: W1,
     rules: WEEKDAY_RULES,
     events: [
       standup('d3'),
@@ -207,11 +217,20 @@ export const DAYS: DayDef[] = [
         reward: { standing: 5, runway: 1000 }, missPenalty: { standing: -8 }, declinePenalty: { standing: -5 },
         note: 'Morning slot. Without coffee she says "synergy" a lot.',
       },
-      { id: 'd3-wins', title: 'Friday Wins 🎉', attendees: ['margo', 'theo'], start: t('16:30'), duration: 30, fixed: true, reward: { morale: 4 } },
+      myLunch('d3'),
+      { id: 'd3-wins', title: 'Friday Wins 🎉', attendees: ['margo', 'theo', 'me'], start: t('16:30'), duration: 30, fixed: true, reward: { morale: 4 } },
       mlunch('d3'),
       tlunch('d3'),
     ],
     script: [
+      {
+        at: t('9:50'), type: 'msg',
+        msg: {
+          app: 'huddle', from: 'Margo', body: 'TechLeaf photo today 📸 blazer or hoodie. be honest', advice: { gut: 1 }, expiresIn: 30, timeoutEffects: {}, timeoutLog: 'Margo dressed herself.',
+          choices: [{ label: 'Blazer', effects: { standing: 2 } }, { label: 'Hoodie (founder energy)', effects: { standing: -1 } }],
+        },
+      },
+      { at: t('12:40'), type: 'msg', msg: { app: 'messages', from: 'Ollie (flatmate)', body: "so. the landlord is selling the flat?? we have 3 weeks to move out 😬 don't panic. (panic a little)" } },
       {
         at: t('9:35'), type: 'msg',
         msg: { app: 'mail', from: 'Finance Bot 🤖', subject: 'Runway check', body: "At current burn, Sproutly has about 16 days of money left.\n\nKestrel Ventures' decision is due in two weeks.\n\nThat's fine! That's fine. 🤖" },
@@ -244,7 +263,7 @@ export const DAYS: DayDef[] = [
     apps: [],
     subtitle: 'No standup. No prep. Your phone is still on, though.',
     memo: weekendMemo("It's Saturday", "No calendar to plan. Just your phone, pinging.\n\nResting lowers stress all day. Answering work pings earns standing, but costs you the rest. Choose."),
-    execs: ['margo', 'theo'],
+    execs: W1,
     rules: [],
     events: [
       {
@@ -267,10 +286,11 @@ export const DAYS: DayDef[] = [
     apps: [],
     subtitle: 'The calm before the week. And a text from an unknown number.',
     memo: weekendMemo("It's Sunday", 'Rest up. Big week ahead: Ryde unlocks tomorrow, and everyone is going somewhere.'),
-    execs: ['margo', 'theo'],
+    execs: W1,
     rules: [],
     events: [],
     script: [
+      { at: t('13:00'), type: 'msg', msg: { app: 'messages', from: 'Jules ❤️', body: "found a flat!! 🏠 2 bed, near the park, has a BATH. viewing is tomorrow 12:30. you have to come. you HAVE to." } },
       {
         at: t('11:00'), type: 'msg',
         msg: {
@@ -295,12 +315,18 @@ export const DAYS: DayDef[] = [
     memo: {
       from: 'Bev (People Ops)',
       subject: 'Halfway! + Ryde',
-      body: "You're halfway through probation! Margo says you're \"fine\". From Margo, that's practically a hug.\n\nNew: Ryde. Off-site meetings now need a car — book one, or watch an exec hail a cab in the rain.",
+      body: "You're halfway through probation! Margo says you're \"fine\". From Margo, that's practically a hug.\n\nThere's now a Team calendar for company-wide things. Everyone's meant to be at those.\n\nNew: Ryde. Off-site meetings now need a car — book one, or watch an exec hail a cab in the rain.",
     },
-    execs: ['margo', 'theo'],
+    execs: W1T,
     rules: WEEKDAY_RULES,
     events: [
-      standup('d6'),
+      teamStandup('d6'),
+      myLunch('d6'),
+      {
+        id: 'd6-flat', proposed: t('12:30'), title: 'Flat viewing w/ Jules 🏠', attendees: ['me'], start: null, duration: 30, travel: 15, place: 'Park Road flat', kind: 'personal', window: [t('12:30'), t('12:30')],
+        reward: { stress: -6 }, missPenalty: { stress: 8 }, declinePenalty: { stress: 8 }, flagOnDone: 'flat-viewed', note: 'Jules booked it. 12:30 sharp. It has a BATH.',
+      },
+      { id: 'd6-allhands', title: 'All-hands 📣', attendees: ['team', 'margo', 'theo', 'me'], start: t('16:15'), duration: 30, fixed: true, reward: { morale: 3 }, note: 'Company-wide. Margo will "share some thoughts".' },
       focus('d6'),
       {
         id: 'd6-vendor', proposed: t('10:00'), title: 'Demo · CloudCompost', minOk: 45, bumpPenalty: { morale: -1 }, travel: 20, place: 'CloudCompost HQ', remoteOk: 'fine', attendees: ['theo'], start: null, duration: 90,
@@ -316,6 +342,21 @@ export const DAYS: DayDef[] = [
       tlunch('d6', '11:45'),
     ],
     script: [
+      {
+        at: t('11:50'), type: 'insert',
+        event: { id: 'd6-notes', title: 'Take notes · Margo & Priya', attendees: ['margo', 'me'], start: t('12:30'), duration: 30, reward: { standing: 3 }, missPenalty: { standing: -4 }, declinePenalty: { standing: -3 }, bumpPenalty: { standing: -2 }, note: 'Margo needs you in the room. At 12:30. Of course.' },
+        msg: { app: 'huddle', from: 'Margo', body: 'need you in my 12:30 w/ Priya to take notes 📝 you\'re free right? you\'re always free' },
+      },
+      {
+        at: t('10:20'), type: 'msg',
+        msg: {
+          app: 'huddle', from: 'Margo', body: 'real question. should I tell the team how little money we actually have? at all-hands today?', advice: { gut: 1 }, expiresIn: 60, timeoutEffects: {}, timeoutLog: 'Margo decided without you.',
+          choices: [
+            { label: 'Tell them the truth', effects: { morale: -5, standing: 2 }, flag: 'told-team' },
+            { label: 'Not yet', effects: { stress: 3 }, flag: 'hid-runway' },
+          ],
+        },
+      },
       {
         at: t('12:40'), type: 'call',
         call: {
@@ -355,10 +396,11 @@ export const DAYS: DayDef[] = [
       subject: 'Tably is live 🍽️',
       body: 'New: Tably, for restaurant reservations. Margo has opinions about restaurants. Most of them are about the bread.',
     },
-    execs: ['margo', 'theo'],
+    execs: W1T,
     rules: WEEKDAY_RULES,
     events: [
-      standup('d7'),
+      teamStandup('d7'),
+      myLunch('d7'),
       focus('d7'),
       {
         id: 'd7-tobias', proposed: t('11:00'), title: 'Check-in · Tobias (Kestrel)', attendees: ['margo'], start: null, duration: 30, window: [t('10:00'), t('16:00')], prep: 15,
@@ -374,6 +416,7 @@ export const DAYS: DayDef[] = [
       tlunch('d7'),
     ],
     script: [
+      { at: t('16:40'), type: 'msg', msg: { app: 'messages', from: 'Mum', body: "don't worry but the doctor wants to run some tests. results thursday. it's probably nothing!! 😊 call me thursday x" } },
       {
         at: t('10:05'), type: 'task',
         task: { id: 'd7-dinner', kind: 'reservation', text: 'Dinner with Tobias: 3 people, 7–8pm', party: 3, window: [t('19:00'), t('20:00')], deadline: t('16:00'), reward: { standing: 4 }, fail: { standing: -6 } },
@@ -401,16 +444,21 @@ export const DAYS: DayDef[] = [
     weekday: 'Wed',
     adhoc: 5,
     apps: [],
-    subtitle: 'No new apps. Just more of everything.',
+    subtitle: 'A new boss. A new colleague. Neither of them asked you.',
     memo: {
       from: 'Bev (People Ops)',
       subject: 'Week two!',
-      body: "No new apps this week — you've got the full kit. Which means no excuses! 🙂\n\nAlso, someone booked a meeting called \"Restructuring\". Probably nothing.",
+      body: "Two new people today!\n\n• Dana Reyes joins as interim COO (the board's idea). Her calendar is yours now too.\n• Kendall joins as a backup EA, \"just in case\". Kendall will help with your calendars. Kendall is very helpful. 💐\n\nAlso, someone booked a meeting called \"Restructuring\". Probably nothing.",
     },
-    execs: ['margo', 'theo'],
-    rules: WEEKDAY_RULES,
+    execs: ALL,
+    rules: WEEK2_RULES,
     events: [
-      standup('d8'),
+      teamStandup('d8', ['team', 'margo', 'theo', 'dana', 'me']),
+      myLunch('d8'),
+      {
+        id: 'd8-dana', proposed: t('10:30'), title: 'Intro · Dana & Margo', attendees: ['margo', 'dana'], start: null, duration: 30, window: [t('10:00'), t('15:00')],
+        reward: { standing: 3 }, missPenalty: { standing: -5 }, declinePenalty: { standing: -6 }, note: 'Margo did not ask for a COO. Dana did not ask for Margo.',
+      },
       focus('d8'),
       {
         id: 'd8-sam', title: '1:1 · Margo & Sam: "Restructuring"', overrun: -15, bumpPenalty: {}, attendees: ['margo'], start: null, duration: 30,
@@ -421,6 +469,9 @@ export const DAYS: DayDef[] = [
       tlunch('d8'),
     ],
     script: [
+      { at: t('9:20'), type: 'msg', msg: { app: 'huddle', from: 'Dana Reyes', body: 'Hello. I take an iced americano, double shot, no milk, no sugar. I will not say it twice. Agendas for everything, please.' } },
+      { at: t('9:20'), type: 'reveal', flag: 'drink-dana' },
+      { at: t('9:25'), type: 'msg', msg: { app: 'huddle', from: 'Kendall (backup EA)', body: "hiii!! 👋 Bev said to help with calendars so I'll just jump in wherever!! think of me as your backup 😊" } },
       { at: t('9:30'), type: 'msg', msg: { app: 'mail', from: 'Gerald Pemberton', subject: 'Board meeting: Monday 11am', body: 'Board meeting confirmed for Monday, 11am. Agenda item one: "Leadership".\n\nPlease ensure Margo attends. — G' } },
       {
         at: t('10:05'), type: 'msg',
@@ -466,13 +517,19 @@ export const DAYS: DayDef[] = [
       subject: 'Kestrel diligence today',
       body: "Kestrel are doing due diligence today — they need Margo AND Theo on a call before lunch. Theo knows. Theo has \"concerns\".",
     },
-    execs: ['margo', 'theo'],
-    rules: WEEKDAY_RULES,
+    execs: ALL,
+    rules: WEEK2_RULES,
     events: [
-      standup('d9'),
+      teamStandup('d9', ['team', 'margo', 'theo', 'dana', 'me']),
+      myLunch('d9'),
+      {
+        id: 'd9-mum', title: 'Call Mum (results) 📞', attendees: ['me'], start: null, duration: 15, kind: 'personal', window: [t('12:00'), t('14:00')],
+        reward: { stress: -6 }, missPenalty: { stress: 10 }, declinePenalty: { stress: 10 }, flagOnDone: 'called-mum', note: 'She said call Thursday. It is Thursday.',
+      },
+      { id: 'd9-ops', proposed: t('15:30'), title: 'Ops review · Dana', attendees: ['dana', 'margo'], start: null, duration: 30, window: [t('14:00'), t('17:00')], reward: { standing: 2 }, missPenalty: { standing: -4 }, declinePenalty: { standing: -4 } },
       focus('d9'),
       {
-        id: 'd9-diligence', proposed: t('11:00'), title: 'Kestrel due diligence 🔍', noBump: true, attendees: ['margo', 'theo'], start: null, duration: 60, window: [t('10:00'), t('12:30')], prep: 15,
+        id: 'd9-diligence', proposed: t('11:00'), title: 'Kestrel due diligence 🔍', noBump: true, attendees: ['margo', 'theo', 'me'], start: null, duration: 60, window: [t('10:00'), t('12:30')], prep: 15,
         reward: { standing: 6, runway: 3000 }, missPenalty: { standing: -12, runway: -2000 }, declinePenalty: { standing: -15 },
         note: 'Both of them. Before 12:30. 15 min prep.',
       },
@@ -480,6 +537,18 @@ export const DAYS: DayDef[] = [
       tlunch('d9', '12:15'),
     ],
     script: [
+      {
+        at: t('10:22'), type: 'msg',
+        msg: {
+          app: 'huddle', from: 'Margo', body: 'servers are on fire and kestrel wants theo on diligence. do I drag him out of the war room?', advice: { gut: 0 }, expiresIn: 30, timeoutEffects: {}, timeoutLog: 'Margo dragged Theo out anyway.',
+          choices: [
+            { label: 'Drag him in', effects: { morale: -6, standing: 3 } },
+            { label: 'Let him fix the servers', effects: { standing: -2, morale: 4 } },
+          ],
+        },
+      },
+      { at: t('14:20'), type: 'msg', when: { if: ['called-mum'] }, msg: { app: 'messages', from: 'Mum', body: 'ALL CLEAR!! told you it was nothing 😘 thank you for calling love x' } },
+      { at: t('14:20'), type: 'effects', when: { unless: ['called-mum'] }, effects: { stress: 6 }, log: "You didn't call Mum.", msg: { app: 'messages', from: 'Mum', body: "results were fine. you didn't call. that's ok. I know you're busy x" } },
       {
         at: t('10:20'), type: 'insert',
         event: { id: 'd9-incident', title: '🔥 INCIDENT: servers down', attendees: ['theo'], start: t('10:30'), duration: 60, fixed: true, force: true, kind: 'personal', note: 'Every plant in the country has gone silent.' },
@@ -521,10 +590,12 @@ export const DAYS: DayDef[] = [
       body:
         "Kestrel's partners are visiting today. If it goes well, Sproutly survives the quarter. If not… let's stay positive! 🌸\n\nAlso, Finance lowered the company card limit. Please spend wisely.\n\nAlso it's Jules' birthday, right? You booked something? You definitely booked something.",
     },
-    execs: ['margo', 'theo'],
-    rules: ['margoMorning', 'theoFocus', 'max60'],
+    execs: ALL,
+    rules: WEEK2_RULES,
     events: [
-      { id: 'd10-standup', title: 'Standup', attendees: ['margo', 'theo'], start: t('9:00'), duration: 15, fixed: true, reward: { morale: 1 } },
+      myLunch('d10'),
+      { id: 'd10-wins', title: 'Friday Wins 🎉', attendees: ['team', 'theo', 'dana', 'me'], start: t('16:30'), duration: 30, fixed: true, reward: { morale: 4 } },
+      { id: 'd10-standup', title: 'Standup', attendees: ['team', 'margo', 'theo', 'dana', 'me'], start: t('9:00'), duration: 15, fixed: true, reward: { morale: 1 } },
       { id: 'd10-focus', title: 'Focus time 🔒', attendees: ['theo'], start: t('13:00'), duration: 240, fixed: true, kind: 'focus' },
       { id: 'd10-board', title: 'Board call', attendees: ['margo', 'theo'], start: t('17:00'), duration: 60, fixed: true, force: true, reward: { standing: 3 } },
       {
@@ -668,10 +739,30 @@ export const DAYS: DayDef[] = [
     apps: [],
     subtitle: 'Yesterday happened. Everyone has feelings about it.',
     memo: weekendMemo('Saturday, again', "Everyone is processing Friday. Your phone is processing everyone."),
-    execs: ['margo', 'theo'],
+    execs: ['margo', 'theo', 'dana', 'me'],
     rules: [],
     events: [],
     script: [
+      {
+        at: t('13:00'), type: 'msg',
+        msg: {
+          app: 'messages', from: 'Jules ❤️', body: 'they OFFERED US THE FLAT 😱 deposit due monday 12:30. can we afford it on a probation salary?? be honest', expiresIn: 120, timeoutEffects: { stress: 6 }, timeoutLog: 'Jules signed nothing. Jules is upset.',
+          choices: [
+            { label: "Sign it. We'll make it work.", effects: { stress: 6 }, flag: 'signed-flat' },
+            { label: 'Wait until after my review', effects: { stress: -2 }, flag: 'flat-wait', log: "Jules said \"ok\". It was not ok." },
+          ],
+        },
+      },
+      {
+        at: t('15:00'), type: 'msg',
+        msg: {
+          app: 'huddle', from: 'Margo', body: 'should I call gerald before monday? get ahead of it?', advice: { gut: 0 }, expiresIn: 90, timeoutEffects: {}, timeoutLog: 'Margo called Gerald. It was a long call.',
+          choices: [
+            { label: 'Call him', effects: { standing: 2 }, flag: 'margo-called-gerald' },
+            { label: 'Let the board come to you', effects: { stress: -2 } },
+          ],
+        },
+      },
       { at: t('10:00'), type: 'msg', when: { if: ['kestrel-met'] }, msg: { app: 'mail', from: 'Tobias (Kestrel)', subject: 'Yesterday', body: "The partners loved it. A term sheet is drafted…\n\n…pending the outcome of your board meeting on Monday. 🤞" } },
       { at: t('10:00'), type: 'msg', when: { unless: ['kestrel-met'] }, msg: { app: 'mail', from: 'Tobias (Kestrel)', subject: 'Yesterday', body: "The partners are \"reconsidering\". Monday's board meeting will be decisive. I'm still rooting for you." } },
       {
@@ -707,7 +798,7 @@ export const DAYS: DayDef[] = [
     apps: [],
     subtitle: 'Gerald calls. This one matters.',
     memo: weekendMemo('Sunday', "Board meeting tomorrow. Try to rest. (You won't.)"),
-    execs: ['margo', 'theo'],
+    execs: ['margo', 'theo', 'dana', 'me'],
     rules: [],
     events: [],
     script: [
@@ -753,16 +844,32 @@ export const DAYS: DayDef[] = [
       subject: 'Board day 😬',
       body: "Board meeting at 11. Margo needs 30 minutes of quiet before it.\n\nAnd tomorrow is your review! No pressure. All of the pressure.",
     },
-    execs: ['margo', 'theo'],
-    rules: WEEKDAY_RULES,
+    execs: ALL,
+    rules: WEEK2_RULES,
     events: [
-      standup('d13'),
+      teamStandup('d13', ['team', 'margo', 'theo', 'dana', 'me']),
+      myLunch('d13'),
       focus('d13'),
-      { id: 'd13-board', title: 'Board meeting 📊', attendees: ['margo', 'theo'], start: t('11:00'), duration: 60, fixed: true, force: true, prep: 30, reward: { standing: 3 } },
+      { id: 'd13-board', title: 'Board meeting 📊', attendees: ['margo', 'theo', 'dana', 'me'], start: t('11:00'), duration: 60, fixed: true, force: true, prep: 30, reward: { standing: 3 } },
       mlunch('d13', '12:30'),
       tlunch('d13', '12:15'),
     ],
     script: [
+      {
+        at: t('9:05'), type: 'request', when: { if: ['signed-flat'] },
+        event: { id: 'd13-lease', title: 'Sign the lease 🖊️', attendees: ['me'], start: null, duration: 30, travel: 15, place: "letting agent's office", kind: 'personal', window: [t('12:30'), t('12:30')], reward: { stress: -8 }, missPenalty: { stress: 12 }, declinePenalty: { stress: 12 }, flagOnDone: 'got-flat', note: '12:30. In person. With ID. On board day.' },
+        msg: { app: 'messages', from: 'Jules ❤️', body: "lease signing is 12:30 today!! in person. bring ID. this is happening 🏠✨" },
+      },
+      {
+        at: t('9:30'), type: 'msg',
+        msg: {
+          app: 'huddle', from: 'Margo', body: 'board in 90 mins. power suit or hoodie', advice: { gut: 1 }, expiresIn: 30, timeoutEffects: {}, timeoutLog: 'Margo wore the hoodie.',
+          choices: [{ label: 'Power suit', effects: { standing: 2 } }, { label: 'Hoodie', effects: { standing: -2 } }],
+        },
+      },
+      { at: t('12:06'), type: 'msg', when: { if: ['backed-margo'] }, msg: { app: 'mail', from: 'Dana Reyes', subject: 'Transition', body: "The board has decided my services are no longer required. Tomorrow is my last day… actually, today is. Agendas are in the shared drive. Nobody will read them." } },
+      { at: t('17:58'), type: 'reveal', flag: 'gone-dana', when: { if: ['backed-margo'] } },
+      { at: t('12:06'), type: 'msg', when: { if: ['honest-gerald'] }, msg: { app: 'huddle', from: 'Dana Reyes', body: "I've been made permanent COO. Margo and I have agreed to \"respect each other's process\". Please book us separate rooms." } },
       {
         at: t('9:10'), type: 'effects', when: { if: ['theo-leaves'] }, effects: { morale: -10 }, log: 'Theo resigned. Leafly wanted him Monday.',
         msg: { app: 'huddle', from: 'Theo', body: "today's my last day. leafly wanted me monday. sorry. you were the best part of this calendar." },
@@ -800,21 +907,27 @@ export const DAYS: DayDef[] = [
       subject: 'Your review: 5pm',
       body: "Big day! Kestrel gives their answer today, and your probation review is at 5pm with Margo and me.\n\nJust be yourself. (Unless yourself is late.) 💐",
     },
-    execs: ['margo', 'theo'],
-    rules: WEEKDAY_RULES,
+    execs: ALL,
+    rules: WEEK2_RULES,
     events: [
-      standup('d14'),
+      teamStandup('d14', ['team', 'margo', 'theo', 'dana', 'me']),
+      myLunch('d14'),
       focus('d14'),
-      { id: 'd14-review', title: 'Your probation review 😬', attendees: ['margo'], start: t('17:00'), duration: 30, fixed: true, force: true, reward: { standing: 2 }, note: 'Bev will be there. Bev has a folder.' },
+      { id: 'd14-review', title: 'Your probation review 😬', attendees: ['margo', 'me'], start: t('17:00'), duration: 30, fixed: true, force: true, reward: { standing: 2 }, note: 'Bev will be there. Bev has a folder.' },
       mlunch('d14'),
       tlunch('d14'),
     ],
     script: [
+      { at: t('11:00'), type: 'effects', when: { if: ['kendall-reported', 'kendall-sabotaged'] }, effects: { standing: 5 }, log: 'Kendall was moved to "special projects".', msg: { app: 'mail', from: 'Bev (People Ops)', subject: 'Re: Kendall', body: 'We looked into it. Kendall has been moved to "special projects" (a desk near the printer). Thank you for flagging. 💐' } },
+      { at: t('11:00'), type: 'effects', when: { if: ['kendall-reported'], unless: ['kendall-sabotaged'] }, effects: { standing: -3 }, log: 'You reported Kendall. Kendall was innocent.', msg: { app: 'mail', from: 'Bev (People Ops)', subject: 'Re: Kendall', body: "We looked into it. Kendall's edits were… all helpful? Let's talk about trust at your review. 💐" } },
       { at: t('13:30'), type: 'reveal', flag: 'funded', when: { if: ['kestrel-met'], meter: { m: 'standing', min: 50 } } },
       { at: t('13:31'), type: 'effects', when: { if: ['funded'] }, effects: { runway: 60000, morale: 10 }, log: 'Kestrel signed the term sheet!', msg: { app: 'mail', from: 'Tobias (Kestrel)', subject: "We're in 🎉", body: "Term sheet signed. Welcome to the Kestrel family.\n\n(Tell Margo to stop sending kombucha.)" } },
       { at: t('13:32'), type: 'effects', when: { unless: ['funded'] }, effects: { morale: -8 }, log: 'Kestrel passed.', msg: { app: 'mail', from: 'Tobias (Kestrel)', subject: 'Our decision', body: "We're going to pass, for now. I'm genuinely rooting for you all. Keep the plants talking." } },
       { at: t('14:30'), type: 'msg', when: { if: ['funded'] }, msg: { app: 'huddle', from: 'Sam', body: 'wait. NO LAYOFFS?? 😭🌱 I take back everything I said about the calendar' } },
       { at: t('14:30'), type: 'msg', when: { unless: ['funded'] }, msg: { app: 'huddle', from: 'Margo', body: "we have to cut three roles. sam's is one. can you… book the meetings. I'm sorry." } },
+    ],
+    reckonings: [
+      { flag: 'kendall-sabotaged', unless: 'kendall-reported', text: "Bev's folder has a list of \"your\" calendar mistakes. Kendall wrote it.", effects: { standing: -6 } },
     ],
   },
 ];
@@ -837,13 +950,13 @@ export function dayAt(i: number): DayDef {
         title: `Endless · Day ${i + 1}`, weekday, weekend: true, adhoc: 3, apps: [],
         subtitle: 'A weekend. In theory.',
         memo: weekendMemo(weekday === 'Sat' ? "It's Saturday" : "It's Sunday", 'Rest lowers stress. Work pings raise standing. You know the drill.'),
-        execs: ['margo', 'theo'], rules: [], events: [], script: [],
+        execs: ['margo', 'theo', 'dana', 'me'], rules: [], events: [], script: [],
       }
     : {
         title: `Endless · Day ${i + 1}`, weekday, adhoc: Math.min(5 + Math.floor(n / 2), 12), apps: [],
         subtitle: n === 1 ? 'You passed probation. The calendar did not notice.' : 'The calendar never ends. Neither do you.',
         memo: { from: 'Bev (People Ops)', subject: `${weekday}: another one`, body: n === 1 ? "Welcome to endless mode! It's just like probation, except it never stops and it gets busier every couple of days. 💐" : 'Another day, another calendar. How long can you last?' },
-        execs: ['margo', 'theo'], rules: WEEKDAY_RULES, events: [standup(tag), focus(tag), mlunch(tag), tlunch(tag)], script: [],
+        execs: ALL, rules: WEEK2_RULES, events: [teamStandup(tag, ALL), focus(tag), mlunch(tag), tlunch(tag), myLunch(tag)], script: [],
       };
   endlessCache.set(i, d);
   return d;
