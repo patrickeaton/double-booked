@@ -340,3 +340,14 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
   content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c);
 }
 .evt.st-missed::before { background: var(--bad); }
+
+.deliver { display: flex; align-items: center; gap: 8px; margin: 2px 0 10px; }
+.deliver b { min-width: 110px; text-align: center; }
+
+.travel { position: absolute; left: 3px; right: 3px; z-index: 1; border-radius: 6px; pointer-events: none;
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--c) 14%, transparent) 0 5px, transparent 5px 10px);
+  border: 1px dashed color-mix(in srgb, var(--c) 45%, transparent); font-size: 10px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.addons { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { background: rgba(255, 255, 255, 0.12); color: #fff; border-radius: 99px; padding: 5px 10px; font-size: 12px; font-weight: 700; }
+.chip small { font-weight: 500; opacity: 0.8; }
+.chip.on { background: #ffd166; color: var(--ink); }

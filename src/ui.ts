@@ -1,7 +1,7 @@
 import { CAL_END, CAL_START, DAYS, DAY_END, DRINKS, EXECS, PAYROLL, PRODUCTS, RULES, fmt } from './data';
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
-  minStart, newGame, nextDay, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
+  minStart, newGame, nextDay, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
   toggleSpeed, unschedule,
 } from './engine';
 import { METER_LABEL, S, dirty, fmtEffect, fmtMoney, isGood, readSave, setRenderer } from './state';
@@ -245,14 +245,21 @@ function renderCalendar() {
     const shown = S.events.filter((e) => e.start !== null && e.attendees.includes(x) && e.status !== 'declined');
     const lanes = layoutLanes(shown.filter((e) => e.kind !== 'focus'));
     for (const e of shown) {
-      const block = renderBlock(e);
-      const l = lanes.get(e);
-      if (l && l.of > 1) {
-        block.style.left = `calc(${(l.lane / l.of) * 100}% + 2px)`;
-        block.style.right = 'auto';
-        block.style.width = `calc(${100 / l.of}% - 4px)`;
+      const pieces = [renderBlock(e)];
+      const tr = travelOf(e);
+      if (tr && e.status !== 'missed') {
+        pieces.push(h('div', { class: 'travel', style: `top:${(e.start! - tr - CAL_START) * PX}px;height:${tr * PX}px;--c:${EXECS[e.attendees[0]].color}` }, '🚗'));
+        pieces.push(h('div', { class: 'travel', style: `top:${(e.start! + e.duration - CAL_START) * PX}px;height:${tr * PX}px;--c:${EXECS[e.attendees[0]].color}` }, '🚗'));
       }
-      col.append(block);
+      const l = lanes.get(e);
+      for (const el of pieces) {
+        if (l && l.of > 1) {
+          el.style.left = `calc(${(l.lane / l.of) * 100}% + 2px)`;
+          el.style.right = 'auto';
+          el.style.width = `calc(${100 / l.of}% - 4px)`;
+        }
+        col.append(el);
+      }
     }
     if (S.phase === 'day') col.append(h('div', { class: 'now-line', style: `top:${(S.now - CAL_START) * PX}px` }));
     col.addEventListener('click', (ev) => {
@@ -287,7 +294,7 @@ function renderCard(e: CalEvent) {
 /** Side-by-side lanes for overlapping events, so clashes are visible instead of stacked. */
 function layoutLanes(evts: CalEvent[]) {
   const out = new Map<CalEvent, { lane: number; of: number }>();
-  const sorted = [...evts].sort((a, b) => a.start! - b.start! || b.duration - a.duration);
+  const sorted = [...evts].sort((a, b) => a.start! - travelOf(a) - (b.start! - travelOf(b)) || b.duration - a.duration);
   let cluster: CalEvent[] = [];
   let laneEnds: number[] = [];
   let clusterEnd = -1;
@@ -297,8 +304,8 @@ function layoutLanes(evts: CalEvent[]) {
     laneEnds = [];
   };
   for (const e of sorted) {
-    const s0 = e.start!;
-    const s1 = s0 + e.duration;
+    const s0 = e.start! - travelOf(e);
+    const s1 = e.start! + e.duration + travelOf(e);
     if (s0 >= clusterEnd) flush();
     let lane = laneEnds.findIndex((end) => end <= s0);
     if (lane === -1) {
@@ -323,7 +330,9 @@ function renderBlock(e: CalEvent) {
   const el = h('div', { class: cls, style: `top:${(start - CAL_START) * PX}px;height:${Math.max(16, e.duration * PX - 2)}px;--c:${EXECS[e.attendees[0]].color}` },
     h('div', { class: 'evt-title' }, e.status === 'missed' ? '💥 ' : e.status === 'done' ? '✓ ' : '', e.title),
     !small && h('div', { class: 'evt-time' }, `${fmt(start)}–${fmt(start + e.duration)}`, e.overranBy ? ` (+${e.overranBy}m)` : ''),
-    !small && issues.length > 0 && e.status === 'scheduled' && h('div', { class: 'evt-issues' }, issues.map((i) => i.icon).join(' ')),
+    !small && h('div', { class: 'evt-issues' },
+      [...(e.status === 'scheduled' ? issues.filter((i) => i.bad).map((i) => i.icon) : []),
+        e.remote ? '💻' : '', e.withCoffee ? '☕' : '', e.withCatering ? '🍱' : ''].filter(Boolean).join(' ')),
   );
   if (movable) makeDraggable(el, e.id, true);
   else el.addEventListener('click', () => select(e.id));
@@ -362,6 +371,15 @@ function renderSelection(e: CalEvent) {
     ),
     canWrap(e) && h('div', { class: 'stepper' },
       h('span', { class: 'small muted' }, `Running since ${fmt(e.start!)} · ${S.now - e.start!} of ${e.planned ?? e.duration}m${(e.planned ?? 0) < ok ? '' : ''}`),
+    ),
+    canAddons(e) && h('div', { class: 'addons' },
+      h('button', { class: `chip ${e.withCoffee ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'coffee') },
+        `☕ Coffee $${addonCost(e).coffee}`,
+        e.coffee && h('small', {}, S.flags.includes(`drink-${e.attendees[0]}`) ? ' · their usual' : ' · house latte?')),
+      e.catering && h('button', { class: `chip ${e.withCatering ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'catering') }, `🍱 Catering $${addonCost(e).catering}`),
+      e.remoteOk && h('button', { class: `chip ${e.remote ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'remote') },
+        e.remote ? '💻 Remote' : `🚗 In person · ${e.travel}m each way`,
+        e.remote && e.remoteOk === 'meh' ? h('small', {}, ' · less impact') : null),
     ),
     h('div', { class: 'selbar-actions' },
       e.status === 'pending' ? h('span', { class: 'small hint-strong' }, 'or tap a time 👇') : h('span', { class: 'spacer' }),
@@ -544,6 +562,7 @@ function renderFeed(app: InboxApp, title: string, sub: string) {
 }
 
 let brewFor: string = 'margo';
+let brewAt: number | null = null; // null = ASAP
 
 function renderBrew() {
   const execs = day().execs;
@@ -558,8 +577,24 @@ function renderBrew() {
           x === 'me' ? '🙋 Me' : `${EXECS[x as ExecId].emoji} ${EXECS[x as ExecId].short}`)),
       ),
       brewFor !== 'me' && h('p', { class: 'muted small hintline' }, known(brewFor as ExecId) ? `📝 Notes say: ${DRINKS.find((d) => d.id === EXECS[brewFor as ExecId].drink)!.name}` : '📝 You don\'t know their order yet. Guess?'),
+      (() => {
+        const min = earliestDelivery();
+        if (brewAt !== null && brewAt < min) brewAt = null;
+        const step = (d: number) => {
+          const base = brewAt ?? Math.ceil(min / 15) * 15;
+          const next = base + d;
+          brewAt = next <= min ? null : Math.min(next, DAY_END - 15);
+          dirty();
+        };
+        return h('div', { class: 'deliver' },
+          h('span', { class: 'small muted' }, 'Deliver'),
+          h('button', { class: 'btn', onclick: () => step(-15), disabled: brewAt === null }, '−15'),
+          h('b', {}, brewAt === null ? `ASAP (${fmt(min)})` : fmt(brewAt)),
+          h('button', { class: 'btn', onclick: () => step(15) }, '+15'),
+        );
+      })(),
       h('div', { class: 'drink-grid' },
-        ...DRINKS.map((d) => h('button', { class: 'drink', onclick: () => orderDrink(d.id, brewFor) },
+        ...DRINKS.map((d) => h('button', { class: 'drink', onclick: () => orderDrink(d.id, brewFor, brewAt) },
           h('span', { class: 'drink-emoji' }, d.emoji), h('b', {}, d.name), h('span', { class: 'muted small' }, `$${d.price}`)))),
       orders.length > 0 && h('h4', {}, 'Orders'),
       ...orders.map((o) => h('div', { class: 'order-row' },

@@ -49,6 +49,19 @@ export interface CalEvent {
   noBump?: boolean;
   /** How many times it has already been pushed. */
   bumps?: number;
+  /** Minutes to get there (and back) when it happens in person. */
+  travel?: number;
+  /** Where it is, for display: "TechLeaf studio". */
+  place?: string;
+  /** How a remote version lands: 'fine' (no loss), 'meh' (half the upside). Absent = must be in person. */
+  remoteOk?: 'fine' | 'meh';
+  remote?: boolean;
+  /** 'wanted' = expected (penalty without it), 'nice' = small bonus. */
+  catering?: 'wanted' | 'nice';
+  /** Add-ons the EA has attached. */
+  withCoffee?: boolean;
+  withCatering?: boolean;
+  departed?: boolean;
   /** For requests arriving mid-day: must be scheduled to START before this. */
   deadline?: number;
   reward?: Effects;

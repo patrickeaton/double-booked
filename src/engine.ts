@@ -11,6 +11,20 @@ const overlaps = (a0: number, a1: number, b0: number, b1: number) => a0 < b1 && 
 const shares = (a: CalEvent, b: CalEvent) => a.attendees.some((x) => b.attendees.includes(x));
 const active = (e: CalEvent) => e.status === 'scheduled' || e.status === 'running';
 const blocks = (e: CalEvent) => e.kind !== 'focus';
+export const travelOf = (e: CalEvent) => (e.travel && !e.remote ? e.travel : 0);
+const occStart = (e: CalEvent) => (e.start ?? 0) - travelOf(e);
+const occEnd = (e: CalEvent) => end(e) + travelOf(e);
+export const COFFEE_ADDON = 6; // per attendee
+export const CATERING_COST = 90;
+
+/** Is this exec tied up right now by `o` (in it, or travelling to/from it)? */
+function occupying(o: CalEvent, now: number): boolean {
+  if (!blocks(o) || o.start === null) return false;
+  if (o.status === 'running') return true;
+  if (o.status === 'scheduled' && o.departed) return true;
+  if (o.status === 'done' && travelOf(o) && now < occEnd(o)) return true;
+  return false;
+}
 
 // ───────────────────────────── game flow ─────────────────────────────
 
@@ -150,6 +164,9 @@ function advance() {
   for (const e of S.events) {
     if (e.status === 'running' && end(e) <= now) finishEvent(e);
   }
+  for (const e of S.events) {
+    if (e.status === 'scheduled' && e.start !== null && !e.departed && travelOf(e) && occStart(e) <= now && e.start > now) depart(e);
+  }
   for (const e of [...S.events].sort((a, b) => Number(!!b.force) - Number(!!a.force))) {
     if (e.status === 'scheduled' && e.start !== null && e.start <= now) startEvent(e);
   }
@@ -258,14 +275,19 @@ function startEvent(e: CalEvent) {
     return;
   }
   const now = S.now;
-  if (!e.force) {
-    const clash = S.events.find((o) => o !== e && o.status === 'running' && blocks(o) && shares(o, e));
+  if (!e.force && !e.departed) {
+    const clash = S.events.find((o) => o !== e && shares(o, e) && occupying(o, now));
     if (clash) {
-      missEvent(e, `Missed: ${e.title}. ${execNames(clash.attendees.filter((a) => e.attendees.includes(a)))} stuck in ${clash.title}.`);
+      const where = clash.status === 'running' ? `stuck in ${clash.title}` : `still travelling (${clash.title})`;
+      missEvent(e, `Missed: ${e.title}. ${execNames(clash.attendees.filter((a) => e.attendees.includes(a)))} ${where}.`);
       return;
     }
   }
   e.status = 'running';
+  chargeAddons(e);
+  if (e.catering === 'wanted' && !e.withCatering) applyEffects({ standing: -4 }, `No catering at ${e.title}. Awkward.`);
+  if (e.catering && e.withCatering) applyEffects(e.catering === 'wanted' ? { standing: 3 } : { morale: 3 }, `Catering at ${e.title} was a hit.`);
+  if (e.withCoffee && !e.coffee) applyEffects({ morale: 1 }, `Coffee at ${e.title}. Nice touch.`, true);
   if (S.selected === e.id) S.selected = null;
 
   for (const id of day().rules) {
@@ -284,7 +306,11 @@ function startEvent(e: CalEvent) {
       banner('calendar', '📋 No prep time', `${execNames(e.attendees)} walked into ${e.title} cold.`);
     }
   }
-  if (e.coffee) {
+  if (e.coffee && e.withCoffee) {
+    const who = e.attendees[0];
+    if (S.flags.includes(`drink-${who}`)) applyEffects({ standing: 2 }, `Perfect coffee waiting at ${e.title}.`);
+    else applyEffects({ standing: -4 }, `${EXECS[who].short} got the house latte at ${e.title}. You should learn their order.`);
+  } else if (e.coffee) {
     const who = e.attendees[0];
     const got = S.orders.filter((o) => o.app === 'brew' && o.to === who && o.arrived && o.arriveAt >= now - 90).pop();
     if (!got) applyEffects({ standing: -3 }, `No coffee before ${e.title}.`);
@@ -304,8 +330,13 @@ function finishEvent(e: CalEvent) {
   e.status = 'done';
   const booked = e.planned ?? e.duration;
   const ok = e.minOk ?? e.baseDuration ?? booked;
+  const remoteMeh = e.remote && e.remoteOk === 'meh';
   if (booked >= ok) {
-    if (e.reward) applyEffects(e.reward, `${e.title} went well.`);
+    if (!e.reward) return;
+    if (remoteMeh) {
+      const half: Effects = Object.fromEntries(Object.entries(e.reward).map(([k, v]) => [k, (v as number) > 0 ? Math.round((v as number) / 2) : v]));
+      applyEffects(half, `${e.title} went OK over video. Would've landed better in person.`);
+    } else applyEffects(e.reward, `${e.title} went well${e.remote ? ' (remote)' : ''}.`);
     return;
   }
   // Cut short: some of the upside, a slice of the downside. Always better than missing it.
@@ -320,10 +351,10 @@ function finishEvent(e: CalEvent) {
 
 // ───────────────────────────── resizing, wrapping up, bumping ─────────────────────────────
 
-export const canResize = (e: CalEvent) => !e.fixed && e.kind !== 'focus' && (e.status === 'pending' || e.status === 'scheduled');
+export const canResize = (e: CalEvent) => !e.departed && !e.fixed && e.kind !== 'focus' && (e.status === 'pending' || e.status === 'scheduled');
 export const canWrap = (e: CalEvent) => !e.fixed && e.kind !== 'focus' && e.status === 'running';
 export const canBump = (e: CalEvent) =>
-  !e.fixed && !e.noBump && e.kind !== 'personal' && (e.status === 'pending' || e.status === 'scheduled') && S.dayIndex + 1 < DAYS.length;
+  !e.departed && !e.fixed && !e.noBump && e.kind !== 'personal' && (e.status === 'pending' || e.status === 'scheduled') && S.dayIndex + 1 < DAYS.length;
 
 export function resizeEvent(id: string, delta: number) {
   const e = findEvent(id);
@@ -367,6 +398,7 @@ export function bumpEvent(id: string) {
     duration: e.baseDuration ?? e.duration,
     status: 'pending',
     fresh: true,
+    departed: false,
     bumps,
     note: `Pushed from yesterday${bumps > 1 ? ` (${bumps}×)` : ''}. ${(e.note ?? '').replace(/^Pushed from yesterday[^.]*\. /, '')}`.trim(),
   });
@@ -393,7 +425,7 @@ export function minStart(): number {
 
 export function placeEvent(id: string, start: number, keepSelected = false) {
   const e = findEvent(id);
-  if (!e || e.fixed) return;
+  if (!e || e.fixed || e.departed) return;
   if (e.status !== 'pending' && e.status !== 'scheduled') return;
   const lo = minStart();
   const hi = DAY_END - e.duration;
@@ -458,7 +490,7 @@ export function autoPlace(id: string): number | null {
 
 export function unschedule(id: string) {
   const e = findEvent(id);
-  if (!e || e.fixed || e.status !== 'scheduled') return;
+  if (!e || e.fixed || e.departed || e.status !== 'scheduled') return;
   e.start = null;
   e.status = 'pending';
   S.selected = null;
@@ -488,6 +520,8 @@ export function issuesFor(e: CalEvent): Issue[] {
     if (e.prep) out.push({ icon: '📋', text: `${e.prep}m prep before`, bad: false });
     if (e.coffee) out.push({ icon: '☕', text: 'Coffee first', bad: false });
     if (e.bumps) out.push({ icon: '📆', text: `Pushed ${e.bumps}×`, bad: false });
+    if (e.travel) out.push({ icon: '🚗', text: `${e.travel}m travel`, bad: false });
+    if (e.catering === 'wanted') out.push({ icon: '🍱', text: 'Catering', bad: false });
     if (e.minOk && e.minOk < (e.baseDuration ?? e.duration)) out.push({ icon: '✂️', text: `Can be ${e.minOk}m`, bad: false });
     for (const id of day().rules) if (RULES[id].id === 'max60' && RULES[id].check(e)) out.push({ icon: '⚠️', text: RULES[id].short, bad: true });
     return out;
@@ -497,20 +531,26 @@ export function issuesFor(e: CalEvent): Issue[] {
   const ok = e.minOk ?? e.baseDuration ?? e.duration;
   if (e.duration < ok) out.push({ icon: '✂️', text: `Too short (needs ${ok}m)`, bad: true });
   if (blocks(e)) {
-    const clash = S.events.find((o) => o !== e && active(o) && blocks(o) && shares(o, e) && o.start !== null && overlaps(s, end(e), o.start, end(o)));
-    if (clash) out.push({ icon: '⛔', text: `Clashes with ${clash.title}`, bad: true });
+    const clash = S.events.find((o) => o !== e && active(o) && blocks(o) && shares(o, e) && o.start !== null && overlaps(occStart(e), occEnd(e), occStart(o), occEnd(o)));
+    if (clash) {
+      const tight = !overlaps(s, end(e), clash.start!, end(clash));
+      out.push({ icon: tight ? '🚗' : '⛔', text: tight ? `No travel time around ${clash.title}` : `Clashes with ${clash.title}`, bad: true });
+    }
   }
   for (const id of day().rules) if (RULES[id].check(e)) out.push({ icon: '⚠️', text: RULES[id].short, bad: true });
   if (e.window && (s < e.window[0] || s > e.window[1])) out.push({ icon: '🕒', text: `Should start ${fmt(e.window[0])}–${fmt(e.window[1])}`, bad: true });
   if (e.prep) {
-    const busy = S.events.some((o) => o !== e && blocks(o) && shares(o, e) && (active(o) || o.status === 'done') && o.start !== null && overlaps(o.start, end(o), s - e.prep!, s));
+    const busy = S.events.some((o) => o !== e && blocks(o) && shares(o, e) && (active(o) || o.status === 'done') && o.start !== null && overlaps(occStart(o), occEnd(o), occStart(e) - e.prep!, occStart(e)));
     if (busy) out.push({ icon: '📋', text: `No ${e.prep}m prep gap`, bad: true });
   }
   if (e.coffee) {
     const who = e.attendees[0];
-    const ordered = S.orders.some((o) => o.app === 'brew' && o.to === who && o.arriveAt <= s && o.arriveAt >= s - 90);
-    out.push({ icon: '☕', text: ordered ? 'Coffee ordered' : 'Needs coffee', bad: !ordered });
+    const ordered = e.withCoffee || S.orders.some((o) => o.app === 'brew' && o.to === who && o.arriveAt <= s && o.arriveAt >= s - 90);
+    out.push({ icon: '☕', text: ordered ? 'Coffee sorted' : 'Needs coffee', bad: !ordered });
   }
+  if (e.catering === 'wanted') out.push({ icon: '🍱', text: e.withCatering ? 'Catered' : 'Wants catering', bad: !e.withCatering });
+  if (travelOf(e)) out.push({ icon: '🚗', text: `${e.travel}m each way`, bad: false });
+  if (e.remote) out.push({ icon: '💻', text: e.remoteOk === 'meh' ? 'Remote (half the upside)' : 'Remote', bad: false });
   return out;
 }
 
@@ -568,22 +608,63 @@ export function chooseCall(idx: number) {
   queueThen(ch.then);
 }
 
+// ───────────────────────────── travel + add-ons ─────────────────────────────
+
+function depart(e: CalEvent) {
+  const now = S.now;
+  const clash = S.events.find((o) => o !== e && shares(o, e) && occupying(o, now));
+  if (clash && !e.force) {
+    missEvent(e, `Missed: ${e.title}. ${execNames(e.attendees)} couldn't leave ${clash.title} in time to travel.`);
+    return;
+  }
+  e.departed = true;
+  banner('calendar', '🚗 Heading out', `${execNames(e.attendees)} leaving for ${e.title}${e.place ? ` at ${e.place}` : ''}.`);
+}
+
+export const addonCost = (e: CalEvent) => ({ coffee: COFFEE_ADDON * e.attendees.length, catering: CATERING_COST });
+
+function chargeAddons(e: CalEvent) {
+  const c = addonCost(e);
+  if (e.withCoffee) {
+    S.meters.runway -= c.coffee;
+    spend(`Brew · coffee for ${e.title}`, c.coffee);
+  }
+  if (e.withCatering) {
+    S.meters.runway -= c.catering;
+    spend(`Catering · ${e.title}`, c.catering);
+  }
+}
+
+const editable = (e: CalEvent) => !e.fixed && e.kind !== 'focus' && e.kind !== 'personal' && (e.status === 'pending' || e.status === 'scheduled');
+export const canAddons = editable;
+
+export function toggleAddon(id: string, which: 'coffee' | 'catering' | 'remote') {
+  const e = findEvent(id);
+  if (!e || !editable(e)) return;
+  if (which === 'coffee') e.withCoffee = !e.withCoffee;
+  if (which === 'catering') e.withCatering = !e.withCatering;
+  if (which === 'remote' && e.remoteOk && !e.departed) e.remote = !e.remote;
+  dirty();
+}
+
 // ───────────────────────────── shopping ─────────────────────────────
 
 const spend = (label: string, amount: number) => {
   S.ledger.unshift({ at: S.now, label, amount: -amount });
 };
 
-export function orderDrink(drinkId: string, to: string) {
+export const earliestDelivery = () => (S.phase === 'day' ? S.now + 15 : DAY_START);
+
+export function orderDrink(drinkId: string, to: string, deliverAt?: number | null) {
   const d = DRINKS.find((x) => x.id === drinkId)!;
-  const at = Math.max(S.now, S.phase === 'day' ? S.now : DAY_START) + 15;
-  S.orders.push({ id: `o${uid()}`, app: 'brew', item: d.id, label: d.name, to, price: d.price, arriveAt: S.phase === 'day' ? at : DAY_START, arrived: false, paidBy: to === 'me' ? 'me' : 'company' });
+  const at = Math.max(earliestDelivery(), deliverAt ?? 0);
+  S.orders.push({ id: `o${uid()}`, app: 'brew', item: d.id, label: d.name, to, price: d.price, arriveAt: at, arrived: false, paidBy: to === 'me' ? 'me' : 'company' });
   if (to !== 'me') {
     S.meters.runway -= d.price;
     spend(`Brew · ${d.name}`, d.price);
   }
   const who = to === 'me' ? 'you' : EXECS[to as ExecId].short;
-  banner('brew', '☕ Order placed', `${d.name} for ${who}. Arrives ${fmt(S.phase === 'day' ? at : DAY_START)}.`);
+  banner('brew', '☕ Order placed', `${d.name} for ${who}. Arrives ${fmt(at)}.`);
 }
 
 export function buyProduct(productId: string, to: string, pay: 'company' | 'me') {
