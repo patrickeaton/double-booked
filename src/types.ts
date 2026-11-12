@@ -22,6 +22,8 @@ export interface CalEvent {
   title: string;
   attendees: ExecId[];
   start: number | null;
+  /** Requested time: it arrives already on the calendar, wherever the requester put it. */
+  proposed?: number;
   duration: number;
   fixed?: boolean;
   /** Fixed events that barge in: they never get "missed", they make others missed. */

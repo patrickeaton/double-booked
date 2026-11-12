@@ -234,9 +234,17 @@ function renderCalendar() {
     if (S.phase === 'day') {
       col.append(h('div', { class: 'past', style: `top:0;height:${(S.now - CAL_START) * PX}px` }));
     }
-    for (const e of S.events) {
-      if (e.start === null || !e.attendees.includes(x) || e.status === 'declined') continue;
-      col.append(renderBlock(e));
+    const shown = S.events.filter((e) => e.start !== null && e.attendees.includes(x) && e.status !== 'declined');
+    const lanes = layoutLanes(shown.filter((e) => e.kind !== 'focus'));
+    for (const e of shown) {
+      const block = renderBlock(e);
+      const l = lanes.get(e);
+      if (l && l.of > 1) {
+        block.style.left = `calc(${(l.lane / l.of) * 100}% + 2px)`;
+        block.style.right = 'auto';
+        block.style.width = `calc(${100 / l.of}% - 4px)`;
+      }
+      col.append(block);
     }
     if (S.phase === 'day') col.append(h('div', { class: 'now-line', style: `top:${(S.now - CAL_START) * PX}px` }));
     col.addEventListener('click', (ev) => {
@@ -266,6 +274,35 @@ function renderCard(e: CalEvent) {
   );
   makeDraggable(card, e.id, false);
   return card;
+}
+
+/** Side-by-side lanes for overlapping events, so clashes are visible instead of stacked. */
+function layoutLanes(evts: CalEvent[]) {
+  const out = new Map<CalEvent, { lane: number; of: number }>();
+  const sorted = [...evts].sort((a, b) => a.start! - b.start! || b.duration - a.duration);
+  let cluster: CalEvent[] = [];
+  let laneEnds: number[] = [];
+  let clusterEnd = -1;
+  const flush = () => {
+    for (const e of cluster) out.get(e)!.of = laneEnds.length;
+    cluster = [];
+    laneEnds = [];
+  };
+  for (const e of sorted) {
+    const s0 = e.start!;
+    const s1 = s0 + e.duration;
+    if (s0 >= clusterEnd) flush();
+    let lane = laneEnds.findIndex((end) => end <= s0);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(s1);
+    } else laneEnds[lane] = s1;
+    out.set(e, { lane, of: 1 });
+    cluster.push(e);
+    clusterEnd = Math.max(clusterEnd, s1);
+  }
+  flush();
+  return out;
 }
 
 function renderBlock(e: CalEvent) {

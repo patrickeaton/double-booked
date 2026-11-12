@@ -42,7 +42,10 @@ export function setupDay(i: number) {
   S.phase = 'memo';
   S.now = PREP_TIME;
   S.startMeters = { ...S.meters };
-  S.events = d.events.map((e) => ({ ...e, status: e.start === null ? 'pending' : 'scheduled' }));
+  S.events = d.events.map((e) => {
+    const start = e.start ?? e.proposed ?? null;
+    return { ...e, start, status: start === null ? 'pending' : 'scheduled' };
+  });
   S.messages = [];
   S.tasks = [];
   S.orders = [];
