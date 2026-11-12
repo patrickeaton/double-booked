@@ -420,7 +420,7 @@ function renderCalendar() {
   const today = viewDay === S.dayIndex;
   const ahead = findFuture(S.selected);
   const sel = findEvent(S.selected) ?? ahead?.e ?? null;
-  // Phone: a newly tapped event opens its details in the sidecar; tablet keeps the inline bar.
+  // A newly tapped event opens its details in the sidecar (every screen size).
   if (S.selected !== lastSel) {
     lastSel = S.selected;
     detailOpen = !!S.selected;
@@ -445,7 +445,7 @@ function renderCalendar() {
         '📥 Requests', h('span', { class: 'count' }, pending.length),
         h('span', { class: 'muted hint' }, pending.length ? 'Tap to open ›' : 'All booked 🎉'));
   if (!pending.length) drawerOpen = false;
-  const detail = !split.matches && sel && detailOpen
+  const detail = sel && detailOpen
     ? h('div', { class: 'drawer-wrap' },
         h('div', { class: 'drawer-backdrop', style: sideDelay(), onclick: () => { detailOpen = false; dirty(); } }),
         h('aside', { class: 'drawer detail', style: sideDelay() },
@@ -467,7 +467,6 @@ function renderCalendar() {
 
   const phone = !split.matches;
   const selBar = !sel ? null
-    : !phone ? (ahead ? renderAheadSelection(sel, ahead.day) : renderSelection(sel))
     : detailOpen ? null
     : h('div', { class: 'pickbar' },
         h('span', {}, '👆 Tap a time', today ? '' : ` on ${shortDate(viewDay)}`, ' for ', h('b', {}, sel.title)),
@@ -735,66 +734,6 @@ function detailActions(e: CalEvent) {
     e.status === 'scheduled' && !e.fixed && h('button', { class: 'd-act', onclick: () => unschedule(e.id) }, '↩︎ Unbook'),
     bumpFx && h('button', { class: 'd-act', onclick: () => bumpEvent(e.id) }, '📆 Tomorrow', h('small', {}, bumpCost || 'free')),
     canAct && h('button', { class: 'd-act danger', onclick: () => declineEvent(e.id) }, 'Decline'),
-  );
-}
-
-function renderSelection(e: CalEvent) {
-  const issues = issuesFor(e);
-  const canAct = e.status === 'pending' || (e.status === 'scheduled' && !e.fixed);
-  const ok = e.minOk ?? e.baseDuration ?? e.duration;
-  const bumpFx = canBump(e) ? bumpPenaltyFor(e) : null;
-  const bumpCost = bumpFx && Object.entries(bumpFx).filter(([, v]) => v).map(([m, v]) => `${METER_ICON[m as Meter]}${m === 'runway' ? fmtMoney(v as number) : v}`).join(' ');
-  return h('div', { class: 'selbar' },
-    h('div', { class: 'selbar-top' },
-      h('b', {}, e.title),
-      h('span', { class: 'muted small nowrap' },
-        e.attendees.map((a) => EXECS[a].short).join(' & '),
-        e.start !== null ? ` · ${fmt(e.start)}` : '',
-        e.status !== 'scheduled' && e.status !== 'pending' ? ` · ${e.status}` : ''),
-    ),
-    e.note && h('div', { class: 'small note' }, e.note),
-    issues.length > 0 && h('div', { class: 'req-tags' }, ...issues.map((i) => h('span', { class: `tag ${i.bad ? 'bad' : ''}` }, `${i.icon} ${i.text}`))),
-    canAct && h('div', { class: 'stepper' },
-      h('span', { class: 'small muted lbl' }, 'Start'),
-      e.start !== null && h('button', { class: 'btn', onclick: () => { nudgeStart(e.id, -15); scrollToEvent(e); } }, '−15'),
-      e.start !== null && h('b', { class: 'len' }, fmt(e.start).replace(/(am|pm)$/, '')),
-      e.start !== null && h('button', { class: 'btn', onclick: () => { nudgeStart(e.id, 15); scrollToEvent(e); } }, '+15'),
-      h('button', { class: `btn ${e.start === null ? 'best primary-y' : ''}`, onclick: () => { autoPlace(e.id); scrollToEvent(e); } }, e.start === null ? '📍 Book best slot' : '📍 Best'),
-    ),
-    canResize(e) && h('div', { class: 'stepper' },
-      h('span', { class: 'small muted lbl' }, 'Length'),
-      h('button', { class: 'btn', onclick: () => resizeEvent(e.id, -15), disabled: e.duration <= 15 }, '−15'),
-      h('b', { class: `len ${e.duration < ok ? 'short' : ''}` }, `${e.duration}m`),
-      h('button', { class: 'btn', onclick: () => resizeEvent(e.id, 15) }, '+15'),
-      h('span', { class: 'small muted' }, e.duration < ok ? `cut short: partial credit` : ok < (e.baseDuration ?? e.duration) ? `fine down to ${ok}m` : ''),
-    ),
-    canWrap(e) && h('div', { class: 'stepper' },
-      h('span', { class: 'small muted' }, `Running since ${fmt(e.start!)} · ${S.now - e.start!} of ${e.planned ?? e.duration}m${(e.planned ?? 0) < ok ? '' : ''}`),
-    ),
-    canEditAttendees(e) && h('div', { class: 'stepper' }, h('span', { class: 'small muted lbl' }, 'Who'), attendeeChips(e)),
-    canBuffer(e) && h('div', { class: 'stepper' },
-      h('span', { class: 'small muted lbl' }, 'Buffer'),
-      h('button', { class: 'btn', disabled: padBefore(e) <= travelOf(e), onclick: () => setBuffer(e.id, 'before', -15) }, '−'),
-      h('b', { class: 'len' }, `${padBefore(e)}m before`),
-      h('button', { class: 'btn', disabled: padBefore(e) >= 120, onclick: () => setBuffer(e.id, 'before', 15) }, '+'),
-      h('button', { class: 'btn', disabled: padAfter(e) <= travelOf(e), onclick: () => setBuffer(e.id, 'after', -15) }, '−'),
-      h('b', { class: 'len' }, `${padAfter(e)}m after`),
-      h('button', { class: 'btn', disabled: padAfter(e) >= 120, onclick: () => setBuffer(e.id, 'after', 15) }, '+')),
-    e.kind !== 'focus' && e.kind !== 'work' && h('div', { class: 'stepper' }, h('span', { class: 'small muted lbl' }, 'Where'), whereRow(e)),
-    canAddons(e) && atOffice(e) && h('div', { class: 'addons' },
-      h('button', { class: `chip ${e.withCoffee ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'coffee') },
-        `☕ Coffee $${addonCost(e).coffee}`,
-        e.coffee && h('small', {}, S.flags.includes(`drink-${e.attendees[0]}`) ? ' · their usual' : ' · house latte?')),
-      e.catering && h('button', { class: `chip ${e.withCatering ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'catering') }, `🍱 Catering $${addonCost(e).catering}`),
-    ),
-    h('div', { class: 'selbar-actions' },
-      e.status === 'pending' ? h('span', { class: 'small hint-strong' }, 'or tap a time 👇') : h('span', { class: 'spacer' }),
-      canWrap(e) && h('button', { class: 'btn danger', onclick: () => wrapUpNow(e.id) }, '✂️ Wrap up now'),
-      e.status === 'scheduled' && !e.fixed && h('button', { class: 'btn', onclick: () => unschedule(e.id) }, 'Unbook'),
-      bumpFx && h('button', { class: 'btn', onclick: () => bumpEvent(e.id), title: 'Push to tomorrow' }, '📆 Tmrw', h('small', { class: 'cost' }, bumpCost || 'free')),
-      canAct && h('button', { class: 'btn danger', onclick: () => declineEvent(e.id) }, 'Decline'),
-      h('button', { class: 'btn icon', onclick: () => select(null), 'aria-label': 'Cancel' }, '✕'),
-    ),
   );
 }
 

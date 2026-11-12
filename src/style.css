@@ -703,3 +703,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .d-rows .chip.ride.on { background: #111827; border-color: #111827; }
 .where-seg { display: flex; }
 .where-seg .seg-btn { flex: 0 1 auto; max-width: 190px; }
+
+/* Tablet/desktop: the details sidecar sits inside the calendar pane */
+.is-split .drawer.detail { width: min(46%, 420px); border-radius: 18px 0 0 18px; }
+.is-split .drawer-wrap { border-radius: 18px; overflow: hidden; }
