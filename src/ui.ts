@@ -1,7 +1,7 @@
-import { CAL_END, CAL_START, DAYS, DAY_END, DRINKS, EXECS, PAYROLL, PRODUCTS, RULES, fmt } from './data';
+import { CAL_END, CAL_START, DAYS, DAY_END, DRINKS, EXECS, PAYROLL, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, TABLE_TIMES, fmt } from './data';
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
-  minStart, newGame, nextDay, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
+  minStart, newGame, nextDay, hasApp, isNewApp, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
   toggleSpeed, unschedule,
 } from './engine';
 import { METER_LABEL, S, dirty, fmtEffect, fmtMoney, isGood, readSave, setRenderer } from './state';
@@ -22,15 +22,17 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, 
   return el;
 }
 
-const APPS: { id: AppId; name: string; icon: string; color: string }[] = [
-  { id: 'calendar', name: 'Calendar', icon: '📅', color: '#ff5b5b' },
-  { id: 'mail', name: 'Mail', icon: '✉️', color: '#3d8bff' },
-  { id: 'huddle', name: 'Huddle', icon: '💬', color: '#7b5cff' },
-  { id: 'messages', name: 'Messages', icon: '💚', color: '#2fc463' },
-  { id: 'brew', name: 'Brew', icon: '☕', color: '#a86b3c' },
-  { id: 'bundl', name: 'Bundl', icon: '📦', color: '#ff9f1c' },
-  { id: 'card', name: 'Card', icon: '💳', color: '#1f2a44' },
-  { id: 'notes', name: 'Notes', icon: '📝', color: '#f5c518' },
+const APPS: { id: AppId; name: string; icon: string; color: string; desc: string }[] = [
+  { id: 'calendar', name: 'Calendar', icon: '📅', color: '#ff5b5b', desc: 'Where the chaos lives.' },
+  { id: 'huddle', name: 'Huddle', icon: '💬', color: '#7b5cff', desc: 'Work chat. Tone is everything.' },
+  { id: 'notes', name: 'Notes', icon: '📝', color: '#f5c518', desc: 'Rules, to-dos and what everyone drinks.' },
+  { id: 'brew', name: 'Brew', icon: '☕', color: '#a86b3c', desc: 'Coffee, now or scheduled.' },
+  { id: 'mail', name: 'Mail', icon: '✉️', color: '#3d8bff', desc: 'Formal requests and Reply-All traps.' },
+  { id: 'messages', name: 'Messages', icon: '💚', color: '#2fc463', desc: 'Your actual life. Remember that?' },
+  { id: 'bundl', name: 'Bundl', icon: '📦', color: '#ff9f1c', desc: 'Gifts and supplies, delivered.' },
+  { id: 'card', name: 'Card', icon: '💳', color: '#1f2a44', desc: 'The company card. Watch the runway.' },
+  { id: 'ryde', name: 'Ryde', icon: '🚕', color: '#111827', desc: 'Book cars for off-site meetings.' },
+  { id: 'tably', name: 'Tably', icon: '🍽️', color: '#e8505b', desc: 'Restaurant reservations. Good luck at 7pm.' },
 ];
 
 const PX = 1.25; // pixels per minute on the calendar
@@ -97,7 +99,7 @@ function render() {
   keepScroll(refs.main, () => {
     const panes: HTMLElement[] = [];
     if (isSplit) {
-      if (S.app === 'calendar') S.app = 'mail';
+      if (S.app === 'calendar' || !hasApp(S.app)) S.app = hasApp('mail') ? 'mail' : 'huddle';
       panes.push(h('section', { class: 'pane pane-cal' }, renderCalendar()));
       panes.push(h('section', { class: 'pane pane-app' }, renderApp(S.app)));
     } else {
@@ -193,10 +195,11 @@ function badgeFor(app: AppId): number {
 }
 
 function renderDock(isSplit: boolean) {
-  return APPS.filter((a) => !(isSplit && a.id === 'calendar')).map((a) => {
+  return APPS.filter((a) => hasApp(a.id) && !(isSplit && a.id === 'calendar')).map((a) => {
     const n = badgeFor(a.id);
     return h('button', { class: `dock-app ${S.app === a.id ? 'active' : ''}`, onclick: () => openApp(a.id) },
-      h('span', { class: 'app-icon', style: `background:${a.color}` }, a.icon, n > 0 && h('span', { class: 'badge' }, n)),
+      h('span', { class: 'app-icon', style: `background:${a.color}` }, a.icon,
+        n > 0 ? h('span', { class: 'badge' }, n) : isNewApp(a.id) ? h('span', { class: 'badge new' }, 'NEW') : null),
       h('span', { class: 'app-name' }, a.name),
     );
   });
@@ -377,6 +380,7 @@ function renderSelection(e: CalEvent) {
         `☕ Coffee $${addonCost(e).coffee}`,
         e.coffee && h('small', {}, S.flags.includes(`drink-${e.attendees[0]}`) ? ' · their usual' : ' · house latte?')),
       e.catering && h('button', { class: `chip ${e.withCatering ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'catering') }, `🍱 Catering $${addonCost(e).catering}`),
+      e.travel && !e.remote && hasApp('ryde') && h('button', { class: `chip ${e.withRide ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'ride') }, `🚕 Ride $${RIDE_COST * 2}`),
       e.remoteOk && h('button', { class: `chip ${e.remote ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'remote') },
         e.remote ? '💻 Remote' : `🚗 In person · ${e.travel}m each way`,
         e.remote && e.remoteOk === 'meh' ? h('small', {}, ' · less impact') : null),
@@ -479,6 +483,8 @@ function renderApp(app: AppId): HTMLElement {
     case 'bundl': return renderBundl();
     case 'card': return renderCard$();
     case 'notes': return renderNotes();
+    case 'ryde': return renderRyde();
+    case 'tably': return renderTably();
   }
 }
 
@@ -666,6 +672,42 @@ function renderNotes() {
   );
 }
 
+function renderRyde() {
+  const trips = S.events.filter((e) => e.travel && e.start !== null && ['scheduled', 'running', 'done'].includes(e.status)).sort((a, b) => a.start! - b.start!);
+  return h('div', { class: 'app ryde' },
+    head('Ryde', 'Cars for off-site meetings'),
+    h('div', { class: 'scroll', 'data-keep': 'ryde' },
+      h('div', { class: 'ryde-map' }, '🗺️ 🚕 · · · · 📍'),
+      trips.length === 0 ? h('p', { class: 'empty' }, 'No off-site meetings booked today.') : null,
+      ...trips.map((e) => h('div', { class: 'order-row' },
+        h('span', {}, h('b', {}, e.title), h('div', { class: 'small muted' }, `${e.place ?? 'Off-site'} · leave ${fmt(e.start! - (e.travel ?? 0))}${e.remote ? ' · remote now' : ''}`)),
+        e.remote ? h('span', { class: 'small muted' }, '💻 no ride needed')
+          : e.departed || e.status !== 'scheduled' ? h('span', { class: 'small muted' }, e.withRide ? '✓ rode' : 'took a cab')
+          : h('button', { class: `btn ${e.withRide ? '' : 'primary'}`, onclick: () => toggleAddon(e.id, 'ride') }, e.withRide ? '✓ Booked' : `Book $${RIDE_COST * 2}`)))),
+  );
+}
+
+let tablyParty = 4;
+
+function renderTably() {
+  const open = S.tasks.filter((x) => x.kind === 'reservation');
+  return h('div', { class: 'app tably' },
+    head('Tably', 'Tonight'),
+    h('div', { class: 'scroll', 'data-keep': 'tably' },
+      ...open.map((x) => h('div', { class: `task ${x.status}` }, h('span', {}, x.status === 'done' ? '✅' : x.status === 'failed' ? '❌' : '⬜'), h('span', {}, x.text))),
+      h('div', { class: 'seg' }, ...[2, 4, 6].map((n) => h('button', { class: `seg-btn ${tablyParty === n ? 'on' : ''}`, onclick: () => { tablyParty = n; dirty(); } }, `👥 ${n}`))),
+      ...RESTAURANTS.map((r) => h('div', { class: 'resto' },
+        h('div', { class: 'resto-head' }, h('span', { class: 'product-emoji' }, r.emoji), h('div', {}, h('b', {}, r.name), h('div', { class: 'small muted' }, r.blurb))),
+        h('div', { class: 'slots' }, ...TABLE_TIMES.map((tm) => {
+          const mine = bookings.some((b) => b.restaurant === r.id && b.time === tm);
+          const taken = slotTaken(r.id, tm);
+          return h('button', { class: `slot ${mine ? 'mine' : taken ? 'taken' : ''}`, disabled: taken, onclick: () => bookTable(r.id, tm, tablyParty) }, mine ? `✓ ${fmt(tm)}` : fmt(tm));
+        })),
+      )),
+    ),
+  );
+}
+
 // ───────────────────────────── overlays ─────────────────────────────
 function renderOverlay(): HTMLElement | null {
   if (S.phase === 'title') return renderTitle();
@@ -703,6 +745,10 @@ function renderMemo() {
       h('b', {}, d.memo.subject),
       h('p', {}, d.memo.body),
     ),
+    h('div', { class: 'new-apps' },
+      h('h4', {}, S.dayIndex === 0 ? 'Your apps' : '📲 New apps unlocked'),
+      ...APPS.filter((a) => d.apps.includes(a.id)).map((a) =>
+        h('div', { class: 'new-app' }, h('span', { class: 'app-icon sm', style: `background:${a.color}` }, a.icon), h('div', {}, h('b', {}, a.name), h('div', { class: 'small muted' }, a.desc))))),
     h('div', { class: 'rules' }, h('h4', {}, "Today's rules"), ...d.rules.map((r) => h('div', { class: 'rule' }, '📌 ', RULES[r].text))),
     h('button', { class: 'btn primary big', onclick: startPrep }, 'Start morning prep ☕'),
   );

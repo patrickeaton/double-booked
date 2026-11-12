@@ -1,4 +1,4 @@
-import type { DayDef, Drink, Exec, ExecId, Product, Rule } from './types';
+import type { DayDef, Drink, Exec, ExecId, Product, Restaurant, Rule } from './types';
 
 export const t = (s: string): number => {
   const [h, m] = s.split(':').map(Number);
@@ -67,6 +67,16 @@ export const PRODUCTS: Product[] = [
   { id: 'whisky', name: 'Single Malt, 18 yr', emoji: '🥃', price: 180, desc: 'Says "we\'re doing great" louder than words.', tier: 'lavish' },
 ];
 
+export const RIDE_COST = 18; // each way
+
+export const RESTAURANTS: Restaurant[] = [
+  { id: 'ember', name: 'Ember', emoji: '🔥', blurb: 'Steak, candles, a sommelier who judges you.', full: [t('19:00')], vibe: { standing: 3, runway: -400 }, vibeLog: 'Ember screamed "we have runway". The deposit did not help the runway.', deposit: 400 },
+  { id: 'fern', name: 'The Fern', emoji: '🌿', blurb: 'Seasonal, calm, very on-brand for a plant company.', full: [t('19:30')] },
+  { id: 'sakura', name: 'Sakura Bar', emoji: '🍣', blurb: 'Great sushi. Karaoke starts at 8. Loudly.', full: [], vibe: { standing: -3 }, vibeLog: 'Karaoke started mid-pitch at Sakura Bar.' },
+  { id: 'lucca', name: "Lucca's", emoji: '🍝', blurb: 'Tiny, romantic, impossible to get into.', full: [t('18:30'), t('20:00')] },
+];
+export const TABLE_TIMES = [t('18:30'), t('19:00'), t('19:30'), t('20:00'), t('20:30')];
+
 export const RULES: Record<string, Rule> = {
   margoMorning: {
     id: 'margoMorning',
@@ -100,12 +110,13 @@ export const DAYS: DayDef[] = [
   // ───────────────────────────── DAY 1 ─────────────────────────────
   {
     title: 'Welcome to Sproutly',
+    apps: ['calendar', 'huddle', 'notes', 'brew'],
     subtitle: 'The AI that talks to your houseplants.',
     memo: {
       from: 'Bev (People Ops)',
       subject: 'Welcome aboard! 🌱',
       body:
-        "Hi and welcome! You're Margo's new Executive Assistant. Your last three predecessors were lovely.\n\nYou're on a 30-day probation. Margo said yes to a lot of things overnight, and some of them are already on her calendar. Some of them overlap. Some of them break her own rules. Get her day sorted before 9am.\n\nTip: things go long. Leave yourself some breathing room. 💐",
+        "Hi and welcome! You're Margo's new Executive Assistant. Your last three predecessors were lovely.\n\nYou're on a 30-day probation. Margo said yes to a lot of things overnight, and some of them are already on her calendar. Some of them overlap. Some of them break her own rules. Get her day sorted before 9am.\n\nFor now you've got the basics: Calendar, Huddle (chat), Notes and Brew (coffee). IT says the rest of your apps are \"coming\".\n\nTip: things go long. Leave yourself some breathing room. 💐",
     },
     execs: ['margo'],
     rules: ['margoMorning'],
@@ -142,7 +153,7 @@ export const DAYS: DayDef[] = [
     ],
     script: [
       { at: t('9:04'), type: 'msg', msg: { app: 'huddle', from: 'Margo', body: "morning!!! 🌞 did I agree to a podcast yesterday? I agree to everything after two kombuchas" } },
-      { at: t('9:30'), type: 'msg', msg: { app: 'mail', from: 'Bev (People Ops)', subject: 'Probation, the fine print', body: "Just so you know how this works: if Margo sends you a \"Quick chat? 🙂\" invite, that's a strike. Three strikes and... well. Let's not think about that! 💐" } },
+      { at: t('9:30'), type: 'msg', msg: { app: 'huddle', from: 'Bev (People Ops)', subject: 'Probation, the fine print', body: "Just so you know how this works: if Margo sends you a \"Quick chat? 🙂\" invite, that's a strike. Three strikes and... well. Let's not think about that! 💐" } },
       { at: t('10:40'), type: 'msg', msg: { app: 'huddle', from: 'Margo', body: 'also my coffee order, write this down: OAT flat white, EXTRA hot. NOT a latte. lattes are for cowards ☕' } },
       { at: t('10:40'), type: 'reveal', flag: 'drink-margo' },
       {
@@ -152,7 +163,7 @@ export const DAYS: DayDef[] = [
           reward: { standing: 3 }, missPenalty: { standing: -8 }, declinePenalty: { standing: -6 },
           note: 'Must start before 4pm. At his club. Gerald "doesn\'t really do video".',
         },
-        msg: { app: 'mail', from: 'Gerald Pemberton', subject: '15 mins today?', body: 'Margo — 15 minutes today, before 4? Nothing urgent. (It is a bit urgent.)\n\n— G' },
+        msg: { app: 'huddle', from: 'Gerald Pemberton', subject: '15 mins today?', body: 'Margo — 15 minutes today, before 4? Nothing urgent. (It is a bit urgent.)\n\n— G' },
       },
       {
         at: t('14:20'), type: 'call',
@@ -168,35 +179,20 @@ export const DAYS: DayDef[] = [
           missedLog: 'Missed Kestrel\'s call. They went with "we\'ll circle back".',
         },
       },
-      {
-        at: t('15:30'), type: 'task',
-        task: { id: 'd1-gift', kind: 'gift', text: 'Send Kestrel a thank-you gift (~$50)', recipient: 'Kestrel Ventures', budget: 50, deadline: t('17:30'), reward: { standing: 4 }, fail: { standing: -5 } },
-        msg: { app: 'mail', from: 'Margo', subject: 'thank-you gift?', body: "Can you send Kestrel something nice? Budget like $50. We are a startup. But make it look like we're not. 🙏\n\n(Bundl has stuff.)" },
-      },
-      {
-        at: t('16:05'), type: 'msg',
-        msg: {
-          app: 'messages', from: 'Jules ❤️', body: 'dinner tonight at 7? or have they chained you to a desk already 😅', expiresIn: 60, timeoutEffects: { stress: 4 }, timeoutLog: 'Left Jules on read.',
-          choices: [
-            { label: "Wouldn't miss it ❤️", effects: { stress: -8 } },
-            { label: 'Might be a bit late…', effects: { stress: 4, standing: 1 } },
-          ],
-        },
-      },
       { at: t('17:05'), type: 'msg', msg: { app: 'huddle', from: 'Theo', body: "Hi. Theo, CTO. Heard you're doing my calendar from tomorrow. I have one rule. You'll find out what it is." } },
-      { at: t('17:25'), type: 'msg', msg: { app: 'messages', from: 'Mum', body: 'Hope the new job is going well!! Remember to EAT. Love you x' } },
     ],
   },
 
   // ───────────────────────────── DAY 2 ─────────────────────────────
   {
     title: 'Two Bosses',
+    apps: ['mail', 'messages', 'bundl', 'card'],
     subtitle: 'Theo has entered the chat.',
     memo: {
       from: 'Bev (People Ops)',
       subject: 'New policy + new boss',
       body:
-        "Two things!\n\n1. Margo read a book on productivity. Effective today: no meeting may run longer than 60 minutes.\n\n2. You're now also managing Theo (CTO). His 1–5pm focus block is non-negotiable. Last EA who touched it now works at a llama farm. (Happily, we hear.)",
+        "Two things!\n\n1. Margo read a book on productivity. Effective today: no meeting may run longer than 60 minutes.\n\n2. You're now also managing Theo (CTO). His 1–5pm focus block is non-negotiable. Last EA who touched it now works at a llama farm. (Happily, we hear.)\n\n3. IT finally set up your Mail, Messages, Bundl (shopping) and the company Card. Use them wisely.",
     },
     execs: ['margo', 'theo'],
     rules: ['margoMorning', 'theoFocus', 'max60'],
@@ -274,13 +270,19 @@ export const DAYS: DayDef[] = [
         msg: { app: 'huddle', from: 'Theo', body: "Would kill for a black coffee. No sugar. \"Oat\" is a lie told by Big Oat. No pressure. Some pressure." },
       },
       { at: t('16:10'), type: 'reveal', flag: 'drink-theo' },
+      { at: t('9:40'), type: 'msg', msg: { app: 'messages', from: 'Mum', body: 'Hope the new job is going well!! Remember to EAT. Love you x' } },
       {
-        at: t('17:15'), type: 'msg',
+        at: t('10:45'), type: 'task',
+        task: { id: 'd2-gift', kind: 'gift', text: 'Send Kestrel a thank-you gift (~$50)', recipient: 'Kestrel Ventures', budget: 50, deadline: t('15:30'), reward: { standing: 4 }, fail: { standing: -5 } },
+        msg: { app: 'mail', from: 'Margo', subject: 'thank-you gift?', body: "Kestrel loved yesterday's call!! Can you send them something nice? Budget like $50. We are a startup. But make it look like we're not. 🙏\n\n(You have Bundl now. Go wild. Not too wild.)" },
+      },
+      {
+        at: t('16:05'), type: 'msg',
         msg: {
-          app: 'messages', from: 'Jules ❤️', body: 'you said 7 yesterday and walked in at 8:40 😐', expiresIn: 40, timeoutEffects: { stress: 6 }, timeoutLog: 'Left Jules on read. Again.',
+          app: 'messages', from: 'Jules ❤️', body: 'dinner tonight at 7? or have they chained you to a desk already 😅', expiresIn: 60, timeoutEffects: { stress: 4 }, timeoutLog: 'Left Jules on read.',
           choices: [
-            { label: "I'm sorry. Tomorrow I'm all yours.", effects: { stress: -6 }, flag: 'promised-jules' },
-            { label: "Work's insane rn, bear with me", effects: { stress: 6 } },
+            { label: "Wouldn't miss it ❤️", effects: { stress: -8 } },
+            { label: 'Might be a bit late…', effects: { stress: 4, standing: 1 } },
           ],
         },
       },
@@ -290,12 +292,13 @@ export const DAYS: DayDef[] = [
   // ───────────────────────────── DAY 3 ─────────────────────────────
   {
     title: 'The Squeeze',
+    apps: ['ryde', 'tably'],
     subtitle: 'There are no right answers. Only less-wrong ones.',
     memo: {
       from: 'Bev (People Ops)',
       subject: 'Big day!! (no pressure)',
       body:
-        "Kestrel's partners are visiting today. If it goes well, Sproutly survives the quarter. If not… let's stay positive! 🌸\n\nAlso, Finance lowered the company card limit. Please spend wisely.",
+        "Kestrel's partners are visiting today. If it goes well, Sproutly survives the quarter. If not… let's stay positive! 🌸\n\nAlso, Finance lowered the company card limit. Please spend wisely.\n\nNew today: Ryde (book cars so nobody hails a cab in heels) and Tably (restaurant reservations). Off-site meetings now need a ride.",
     },
     execs: ['margo', 'theo'],
     rules: ['margoMorning', 'theoFocus', 'max60'],
@@ -411,6 +414,16 @@ export const DAYS: DayDef[] = [
             { label: 'Ask Wren to cover notes', effects: { morale: -6, standing: -3 }, log: 'Wren covered. Wren will remember this.' },
           ],
         },
+      },
+      {
+        at: t('11:50'), type: 'task',
+        task: { id: 'd3-table', kind: 'reservation', text: "Book Kestrel's dinner: 4 people, 7–8pm", party: 4, window: [t('19:00'), t('20:00')], deadline: t('16:30'), reward: { standing: 4 }, fail: { standing: -8 } },
+        msg: { app: 'mail', from: 'Margo', subject: 'dinner w/ kestrel tonight!!', body: "They said YES to dinner 🎉 Table for 4, somewhere between 7 and 8. Somewhere that says \"we have runway\". Use Tably." },
+      },
+      {
+        at: t('15:20'), type: 'task',
+        task: { id: 'd3-lucca', kind: 'reservation', personal: true, text: "Book Lucca's for Jules' birthday (2 people, 7pm)", party: 2, place: 'lucca', window: [t('19:00'), t('19:00')], deadline: t('17:30'), reward: { stress: -8 }, fail: { stress: 12 } },
+        msg: { app: 'messages', from: 'Jules ❤️', body: "wait. you DID book Lucca's right?? 7pm?? 🥺" },
       },
       { at: t('17:40'), type: 'msg', msg: { app: 'huddle', from: 'Gerald', body: 'Margo — is the new EA working out? Asking for the board. — G\n\n(Sorry, wrong channel.)' } },
     ],

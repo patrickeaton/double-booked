@@ -1,10 +1,13 @@
-import { CAL_START, DAYS, DAY_END, DAY_START, DRINKS, EXECS, PAYROLL, PREP_TIME, PRODUCTS, RULES, fmt } from './data';
+import { CAL_START, DAYS, DAY_END, DAY_START, DRINKS, EXECS, PAYROLL, PREP_TIME, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, fmt } from './data';
 import {
   S, START_METERS, addStrike, applyEffects, banner, dirty, fmtMoney, readSave, uid, writeSave, clearSave,
 } from './state';
 import type { AppId, CalEvent, Effects, ExecId, Message, MsgDef, Script } from './types';
 
 export const day = () => DAYS[S.dayIndex];
+export const unlockedApps = (): AppId[] => DAYS.slice(0, S.dayIndex + 1).flatMap((d) => d.apps);
+export const hasApp = (a: AppId) => unlockedApps().includes(a);
+export const isNewApp = (a: AppId) => S.dayIndex > 0 && day().apps.includes(a);
 export const findEvent = (id: string | null) => S.events.find((e) => e.id === id);
 const end = (e: CalEvent) => (e.start ?? 0) + e.duration;
 const overlaps = (a0: number, a1: number, b0: number, b1: number) => a0 < b1 && b0 < a1;
@@ -72,6 +75,7 @@ export function setupDay(i: number) {
   S.log = [];
   S.call = null;
   S.queue = d.script.map((s) => ({ ...s })).sort((a, b) => a.at - b.at);
+  bookings.length = 0;
   S.selected = null;
   S.openMail = null;
   S.sheet = null;
@@ -80,7 +84,7 @@ export function setupDay(i: number) {
   S.banners = [];
   S.toasts = [];
   S.paused = false;
-  addMessage({ app: 'mail', ...d.memo }, true);
+  addMessage({ app: hasApp('mail') ? 'mail' : 'huddle', ...d.memo }, true);
   S.app = 'calendar';
   dirty();
 }
@@ -550,6 +554,7 @@ export function issuesFor(e: CalEvent): Issue[] {
   }
   if (e.catering === 'wanted') out.push({ icon: '🍱', text: e.withCatering ? 'Catered' : 'Wants catering', bad: !e.withCatering });
   if (travelOf(e)) out.push({ icon: '🚗', text: `${e.travel}m each way`, bad: false });
+  if (travelOf(e) && hasApp('ryde')) out.push({ icon: '🚕', text: e.withRide ? 'Ride booked' : 'Needs a ride', bad: !e.withRide });
   if (e.remote) out.push({ icon: '💻', text: e.remoteOk === 'meh' ? 'Remote (half the upside)' : 'Remote', bad: false });
   return out;
 }
@@ -559,6 +564,7 @@ export function issuesFor(e: CalEvent): Issue[] {
 const APP_OF: Record<string, AppId> = { mail: 'mail', huddle: 'huddle', messages: 'messages' };
 
 export function addMessage(def: MsgDef, quiet = false): Message {
+  if (!hasApp(def.app)) def = { ...def, app: 'huddle' }; // apps you don't have yet fall back to chat
   const m: Message = { ...def, id: `m${uid()}`, at: S.now, read: false };
   if (def.choices && def.expiresIn) m.expires = S.now + def.expiresIn;
   S.messages.push(m);
@@ -618,6 +624,9 @@ function depart(e: CalEvent) {
     return;
   }
   e.departed = true;
+  if (hasApp('ryde') && !e.withRide) {
+    applyEffects({ standing: -3, stress: 4 }, `No ride booked for ${e.title}. ${execNames(e.attendees)} hailed a cab and arrived flustered.`);
+  }
   banner('calendar', '🚗 Heading out', `${execNames(e.attendees)} leaving for ${e.title}${e.place ? ` at ${e.place}` : ''}.`);
 }
 
@@ -629,6 +638,10 @@ function chargeAddons(e: CalEvent) {
     S.meters.runway -= c.coffee;
     spend(`Brew · coffee for ${e.title}`, c.coffee);
   }
+  if (e.withRide && travelOf(e)) {
+    S.meters.runway -= RIDE_COST * 2;
+    spend(`Ryde · ${e.title}`, RIDE_COST * 2);
+  }
   if (e.withCatering) {
     S.meters.runway -= c.catering;
     spend(`Catering · ${e.title}`, c.catering);
@@ -638,12 +651,13 @@ function chargeAddons(e: CalEvent) {
 const editable = (e: CalEvent) => !e.fixed && e.kind !== 'focus' && e.kind !== 'personal' && (e.status === 'pending' || e.status === 'scheduled');
 export const canAddons = editable;
 
-export function toggleAddon(id: string, which: 'coffee' | 'catering' | 'remote') {
+export function toggleAddon(id: string, which: 'coffee' | 'catering' | 'remote' | 'ride') {
   const e = findEvent(id);
   if (!e || !editable(e)) return;
   if (which === 'coffee') e.withCoffee = !e.withCoffee;
   if (which === 'catering') e.withCatering = !e.withCatering;
   if (which === 'remote' && e.remoteOk && !e.departed) e.remote = !e.remote;
+  if (which === 'ride' && e.travel) e.withRide = !e.withRide;
   dirty();
 }
 
@@ -711,6 +725,34 @@ function deliver(o: (typeof S.orders)[number]) {
       else applyEffects({ morale: -2 }, `${EXECS[exec].short} got the wrong coffee.`);
     }
   }
+}
+
+export interface Booking { restaurant: string; time: number; party: number }
+export const bookings: Booking[] = [];
+
+export function slotTaken(restId: string, time: number) {
+  const r = RESTAURANTS.find((x) => x.id === restId)!;
+  return r.full.includes(time) || bookings.some((b) => b.restaurant === restId && b.time === time);
+}
+
+export function bookTable(restId: string, time: number, party: number) {
+  const r = RESTAURANTS.find((x) => x.id === restId)!;
+  if (slotTaken(restId, time)) return;
+  bookings.push({ restaurant: restId, time, party });
+  const task = S.tasks.find(
+    (x) => x.status === 'open' && x.kind === 'reservation' && x.party === party && (!x.place || x.place === restId) && x.window && time >= x.window[0] && time <= x.window[1],
+  );
+  if (task) {
+    task.status = 'done';
+    applyEffects(task.reward, `Booked ${r.name} for ${party} at ${fmt(time)}.`);
+    if (!task.personal && r.vibe) {
+      if (r.deposit) spend(`Tably · ${r.name} deposit`, r.deposit);
+      applyEffects(r.vibe, r.vibeLog ?? r.name);
+    }
+  } else {
+    S.log.push({ at: S.now, text: `Booked ${r.name} for ${party} at ${fmt(time)} (nobody asked for that).`, effects: {} });
+  }
+  banner('tably', '🍽️ Table booked', `${r.name} · ${party} people · ${fmt(time)}`);
 }
 
 // ───────────────────────────── end of day ─────────────────────────────
@@ -814,6 +856,7 @@ export function retryDay() {
 }
 
 export function openApp(app: AppId) {
+  if (!hasApp(app)) return;
   S.app = app;
   if (app !== 'mail') S.openMail = null;
   S.banners = S.banners.filter((b) => b.app !== app);

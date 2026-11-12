@@ -1,7 +1,7 @@
 export type ExecId = 'margo' | 'theo';
 export type Meter = 'standing' | 'runway' | 'morale' | 'stress';
 export type Effects = Partial<Record<Meter, number>>;
-export type AppId = 'calendar' | 'mail' | 'huddle' | 'messages' | 'brew' | 'bundl' | 'card' | 'notes';
+export type AppId = 'calendar' | 'mail' | 'huddle' | 'messages' | 'brew' | 'bundl' | 'card' | 'notes' | 'ryde' | 'tably';
 export type InboxApp = 'mail' | 'huddle' | 'messages';
 
 export interface Exec {
@@ -61,6 +61,7 @@ export interface CalEvent {
   /** Add-ons the EA has attached. */
   withCoffee?: boolean;
   withCatering?: boolean;
+  withRide?: boolean;
   departed?: boolean;
   /** For requests arriving mid-day: must be scheduled to START before this. */
   deadline?: number;
@@ -128,7 +129,11 @@ export interface TaskDef {
   id: string;
   text: string;
   deadline: number;
-  kind: 'coffee' | 'gift';
+  kind: 'coffee' | 'gift' | 'reservation';
+  /** reservation: party size, acceptable time range, and (optionally) a specific restaurant id. */
+  party?: number;
+  window?: [number, number];
+  place?: string;
   exec?: ExecId;
   recipient?: string;
   personal?: boolean;
@@ -155,6 +160,8 @@ export type Script = { at: number; after?: number } & (
 
 export interface DayDef {
   title: string;
+  /** Apps that unlock on this day (they stay unlocked afterwards). */
+  apps: AppId[];
   subtitle: string;
   memo: { from: string; subject: string; body: string };
   execs: ExecId[];
@@ -190,6 +197,19 @@ export interface Product {
   price: number;
   desc: string;
   tier: 'cheap' | 'good' | 'lavish';
+}
+
+export interface Restaurant {
+  id: string;
+  name: string;
+  emoji: string;
+  blurb: string;
+  /** Times already taken tonight. */
+  full: number[];
+  /** Extra effects when it's used for a work booking. */
+  vibe?: Effects;
+  vibeLog?: string;
+  deposit?: number;
 }
 
 export interface Drink {

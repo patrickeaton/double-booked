@@ -351,3 +351,22 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .chip { background: rgba(255, 255, 255, 0.12); color: #fff; border-radius: 99px; padding: 5px 10px; font-size: 12px; font-weight: 700; }
 .chip small { font-weight: 500; opacity: 0.8; }
 .chip.on { background: #ffd166; color: var(--ink); }
+
+.badge.new { background: #ffd166; color: var(--ink); font-size: 9px; letter-spacing: 0.04em; }
+.new-apps { background: var(--card); border-radius: 14px; padding: 4px 12px 10px; }
+.new-app { display: flex; gap: 10px; align-items: center; padding: 6px 0; }
+.app-icon.sm { width: 34px; height: 34px; font-size: 18px; border-radius: 10px; flex: none; }
+.ryde-map { background: linear-gradient(135deg, #e9f0e6, #dfe8f3); border-radius: 14px; padding: 26px; text-align: center; font-size: 22px; letter-spacing: 0.2em; margin-bottom: 8px; }
+.resto { border: 1px solid var(--line); border-radius: 12px; padding: 10px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 8px; }
+.resto-head { display: flex; gap: 10px; align-items: center; }
+.slots { display: flex; flex-wrap: wrap; gap: 6px; }
+.slot { background: #f1eee6; border-radius: 8px; padding: 6px 9px; font-size: 12px; font-weight: 700; }
+.slot.taken { opacity: 0.35; text-decoration: line-through; }
+.slot.mine { background: var(--good); color: #fff; }
+@media (max-width: 819px) {
+  .dock { overflow-x: auto; justify-content: flex-start; scrollbar-width: none; }
+  .dock::-webkit-scrollbar { display: none; }
+  .dock-app { flex: 0 0 auto; min-width: 46px; }
+  .dock-app:first-child { margin-left: auto; }
+  .dock-app:last-child { margin-right: auto; }
+}
