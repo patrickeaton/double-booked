@@ -1011,7 +1011,7 @@ function fillerDay(i: number): DayDef {
         execs: [...bosses, 'me'], rules: [], events: [], script: [],
       }
     : {
-        title: `An ordinary ${weekday}`, weekday, adhoc: Math.min(5 + 2 * weekOf(i) + (i % 2), 12), apps: [],
+        title: `An ordinary ${weekday}`, weekday, adhoc: Math.min(7 + 2 * weekOf(i) + (i % 2), 14), apps: [],
         subtitle: weekOf(i) >= 2 ? 'Week ' + (weekOf(i) + 1) + '. It does not get quieter.' : 'No big story today. Just the job.',
         memo: { from: 'Bev (People Ops)', subject: memo.subject.replace('{wd}', weekday), body: memo.body.replace('{wd}', weekday) },
         execs, rules: work.rules,
