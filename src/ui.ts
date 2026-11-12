@@ -221,7 +221,7 @@ function renderPulse() {
         h('div', { class: 'pulse-val' }, h('b', {}, value), d !== 0 && h('small', { class: isGood(k, d) ? 'pos' : 'neg' }, `${d > 0 ? '+' : ''}${k === 'runway' ? fmtMoney(d) : d} today`)),
       ),
       h('div', { class: 'meter-bar' }, h('span', { style: `width:${Math.max(0, Math.min(100, pct))}%` })),
-      ...fx[k as keyof typeof fx].map((e) => h('div', { class: `pulse-fx ${e.good ? '' : 'bad'}` }, e.good ? '• ' : '⚠️ ', e.text)),
+      ...(fx[k as keyof typeof fx].length ? fx[k as keyof typeof fx] : [{ text: 'No effect right now.', good: true }]).map((e) => h('div', { class: `pulse-fx ${e.good ? '' : 'bad'}` }, e.good ? '• ' : '⚠️ ', e.text)),
     );
   };
   return h('div', { class: 'app pulse' },
@@ -419,7 +419,7 @@ function renderBlock(e: CalEvent) {
   const cls = ['evt', `st-${e.status}`, `k-${e.kind ?? 'meeting'}`, bad ? 'has-issue' : '', S.selected === e.id ? 'selected' : '', movable ? 'movable' : '', small ? 'small' : '', e.attendees.length > 1 ? 'multi' : '', e.fresh ? 'fresh' : ''].join(' ');
   const el = h('div', { class: cls, style: `top:${(start - CAL_START) * PX}px;height:${Math.max(16, e.duration * PX - 2)}px;--c:${EXECS[e.attendees[0]].color}` },
     e.editedBy && e.status === 'scheduled' && h('span', { class: 'edited-mark', title: `Edited by ${e.editedBy}` }, '✏️'),
-    h('div', { class: 'evt-title' }, e.status === 'missed' ? '💥 ' : e.status === 'done' ? '✓ ' : '', e.title),
+    h('div', { class: 'evt-title' }, e.status === 'missed' ? '💥 ' : e.status === 'done' ? '✓ ' : '', e.kind === 'personal' && e.attendees.includes('me') ? '🏠 ' : '', e.title),
     !small && h('div', { class: 'evt-time' }, `${fmt(start)}–${fmt(start + e.duration)}`, e.overranBy ? ` (+${e.overranBy}m)` : ''),
     !small && h('div', { class: 'evt-issues' },
       [...(e.status === 'scheduled' ? issues.filter((i) => i.bad).map((i) => i.icon) : []),

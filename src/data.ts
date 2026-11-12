@@ -66,11 +66,11 @@ export const EXECS: Record<ExecId, Exec> = {
     id: 'me',
     name: 'You',
     short: 'You',
-    title: 'Executive Assistant',
+    title: 'Work + personal',
     color: '#8a8fa8',
     emoji: '🙋',
     drink: 'latte|whole|hot|single|none',
-    quirks: ['Your own calendar. Lighter. Somehow still a mess.', 'Skipping your own lunch counts. Your stress will tell you.'],
+    quirks: ['Your own calendar: your work and your life, in one place. 🏠 = personal.', 'Skip your work, Bev notices. Skip your life, your stress notices.'],
   },
   team: {
     id: 'team',

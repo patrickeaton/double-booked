@@ -187,6 +187,15 @@ const ERRANDS: { title: string; body: string; from: string; dur: number; travel?
   { title: 'Sign for a parcel 📦', body: "there's a parcel for you that needs a signature. I'm not home. are you? 😬 before {by}", from: 'Ollie (flatmate)', dur: 15, travel: [10, 'home'] },
 ];
 
+/** Your own work: tasks that land on your calendar (skip them and Bev notices). */
+const MY_WORK: { title: string; body: string; from: string; app: InboxApp; dur: number }[] = [
+  { title: 'Expense report 🧾', body: 'Your expenses are due before {by}. Receipts please. Yes, the kombucha ones too. — Dev', from: 'Dev (Finance)', app: 'mail', dur: 30 },
+  { title: "Triage Margo's inbox 📥", body: "Margo's inbox is at 3,402 unread. Can you block 30 mins before {by} to triage? She says \"just archive the scary ones\" 💐", from: 'Bev (People Ops)', app: 'huddle', dur: 30 },
+  { title: 'Training: "Calendars & You" 🎓', body: 'Mandatory 30-min training, before {by}. Module 3 is called "When Everyone Is Double Booked". Topical!', from: 'Bev (People Ops)', app: 'mail', dur: 30 },
+  { title: 'Book the team lunch 🥪', body: "can you sort team lunch? 15 mins to order before {by}. no fish. we've talked about the fish", from: 'Wren', app: 'huddle', dur: 15 },
+  { title: 'Draft Margo\'s newsletter ✍️', body: 'need you to draft the investor newsletter before {by}. 45 mins? make it sound like we have a plan 🌱', from: 'Margo', app: 'huddle', dur: 45 },
+];
+
 /** Margo asks your advice. `gut` is what she leans towards anyway. */
 const ADVICE: { body: string; gut: number; choices: Choice[] }[] = [
   { body: 'should I reply-all to the investor thread with a gif? it is a GOOD gif', gut: 1, choices: [{ label: 'No gif.', effects: { standing: 1 } }, { label: 'Send the gif', effects: { standing: -4 } }] },
@@ -249,7 +258,7 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
   const used = new Set<string>();
   const kinds: [string, number][] = [
     ['meeting', 4], ['dilemma', 3], ['call', 1], ['self', 1],
-    ...(d.execs.includes('me') ? [['errand', 1.5] as [string, number]] : []),
+    ...(d.execs.includes('me') ? [['errand', 1.2] as [string, number], ['mywork', 1.5] as [string, number]] : []),
     ...(d.execs.includes('margo') && dayIndex >= 2 ? [['advice', 1.5] as [string, number]] : []),
     ...(has('brew') ? [['coffee', 1] as [string, number]] : []),
     ...(has('bundl') ? [['gift', 1] as [string, number]] : []),
@@ -364,6 +373,21 @@ export function generateAdhoc(dayIndex: number, d: DayDef, seed: number, has: (a
           note: `Your own errand. Before ${fmt(by)}.`,
         },
         msg: { app: 'messages', from: x.from, body: x.body.replace('{by}', fmt(by)) },
+      });
+    } else if (kind === 'mywork') {
+      const opts = MY_WORK.filter((x) => !used.has(x.title));
+      if (!opts.length) continue;
+      const x = pick(r, opts);
+      used.add(x.title);
+      const by = Math.min(q15(at + 120 + r() * 90), t('17:30'));
+      out.push({
+        at, type: 'request',
+        event: {
+          id: id(), title: x.title, attendees: ['me'], start: null, duration: x.dur, deadline: by,
+          reward: { standing: 2 }, missPenalty: { standing: -3 }, declinePenalty: { standing: -2 }, bumpPenalty: { standing: -1 },
+          note: `Your work. Before ${fmt(by)}.`,
+        },
+        msg: { app: x.app, from: x.from, subject: x.app === 'mail' ? x.title : undefined, body: x.body.replace('{by}', fmt(by)) },
       });
     } else if (kind === 'advice') {
       const opts = ADVICE.filter((x) => !used.has(x.body));

@@ -218,6 +218,10 @@ export const DAYS: DayDef[] = [
         note: 'Morning slot. Without coffee she says "synergy" a lot.',
       },
       myLunch('d3'),
+      {
+        id: 'd3-bev', proposed: t('15:30'), title: 'Week-one check-in · Bev ☕', attendees: ['me'], start: null, duration: 15, window: [t('14:00'), t('16:15')],
+        reward: { standing: 2, stress: -2 }, missPenalty: { standing: -3 }, declinePenalty: { standing: -3 }, note: 'Bev has a folder. Bev always has a folder.',
+      },
       { id: 'd3-wins', title: 'Friday Wins 🎉', attendees: ['margo', 'theo', 'me'], start: t('16:30'), duration: 30, fixed: true, reward: { morale: 4 } },
       mlunch('d3'),
       tlunch('d3'),
@@ -456,6 +460,10 @@ export const DAYS: DayDef[] = [
       teamStandup('d8', ['team', 'margo', 'theo', 'dana', 'me']),
       myLunch('d8'),
       {
+        id: 'd8-ropes', title: 'Show Kendall the ropes 🎓', attendees: ['me'], start: null, duration: 30, window: [t('10:00'), t('16:00')],
+        reward: { standing: 1, morale: 2 }, missPenalty: { standing: -2 }, declinePenalty: { standing: -2 }, flagOnDone: 'trained-kendall', note: "Or don't. Kendall will learn anyway. That's the worry.",
+      },
+      {
         id: 'd8-dana', proposed: t('10:30'), title: 'Intro · Dana & Margo', attendees: ['margo', 'dana'], start: null, duration: 30, window: [t('10:00'), t('15:00')],
         reward: { standing: 3 }, missPenalty: { standing: -5 }, declinePenalty: { standing: -6 }, note: 'Margo did not ask for a COO. Dana did not ask for Margo.',
       },
@@ -594,6 +602,10 @@ export const DAYS: DayDef[] = [
     rules: WEEK2_RULES,
     events: [
       myLunch('d10'),
+      {
+        id: 'd10-pack', title: 'Board pack prep 📑', attendees: ['me'], start: null, duration: 45, deadline: t('16:00'),
+        reward: { standing: 4 }, missPenalty: { standing: -5 }, declinePenalty: { standing: -5 }, note: "Monday's board pack. Margo wants it \"by end of day\". Margo's day ends at 4.",
+      },
       { id: 'd10-wins', title: 'Friday Wins 🎉', attendees: ['team', 'theo', 'dana', 'me'], start: t('16:30'), duration: 30, fixed: true, reward: { morale: 4 } },
       { id: 'd10-standup', title: 'Standup', attendees: ['team', 'margo', 'theo', 'dana', 'me'], start: t('9:00'), duration: 15, fixed: true, reward: { morale: 1 } },
       { id: 'd10-focus', title: 'Focus time 🔒', attendees: ['theo'], start: t('13:00'), duration: 240, fixed: true, kind: 'focus' },
@@ -849,6 +861,10 @@ export const DAYS: DayDef[] = [
     events: [
       teamStandup('d13', ['team', 'margo', 'theo', 'dana', 'me']),
       myLunch('d13'),
+      {
+        id: 'd13-print', title: 'Print the board packs 🖨️', attendees: ['me'], start: null, duration: 15, window: [t('10:00'), t('10:30')],
+        reward: { standing: 2 }, missPenalty: { standing: -5 }, declinePenalty: { standing: -5 }, note: 'Before the 11am board. The printer is on the 3rd floor. The printer hates you.',
+      },
       focus('d13'),
       { id: 'd13-board', title: 'Board meeting 📊', attendees: ['margo', 'theo', 'dana', 'me'], start: t('11:00'), duration: 60, fixed: true, force: true, prep: 30, reward: { standing: 3 } },
       mlunch('d13', '12:30'),
@@ -912,6 +928,10 @@ export const DAYS: DayDef[] = [
     events: [
       teamStandup('d14', ['team', 'margo', 'theo', 'dana', 'me']),
       myLunch('d14'),
+      {
+        id: 'd14-self', title: 'Self-review form 📝', attendees: ['me'], start: null, duration: 30, deadline: t('16:30'),
+        reward: { standing: 3 }, missPenalty: { standing: -4 }, declinePenalty: { standing: -4 }, note: 'Rate yourself 1–5 on "resilience". Do not write 6.',
+      },
       focus('d14'),
       { id: 'd14-review', title: 'Your probation review 😬', attendees: ['margo', 'me'], start: t('17:00'), duration: 30, fixed: true, force: true, reward: { standing: 2 }, note: 'Bev will be there. Bev has a folder.' },
       mlunch('d14'),

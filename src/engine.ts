@@ -19,28 +19,40 @@ export const highMorale = () => S.meters.morale >= 70;
 export const stressPace = () => (S.meters.stress >= 80 ? 1.3 : S.meters.stress >= 60 ? 1.15 : 1);
 
 export interface MeterEffect { text: string; good: boolean }
+/** Only what's actually affecting you right now (nothing about systems you haven't met yet). */
 export function meterEffects(): Record<'standing' | 'runway' | 'morale' | 'stress', MeterEffect[]> {
   const m = S.meters;
-  const trust = Math.round(Math.max(0.15, Math.min(0.85, 0.25 + (m.standing - 40) / 100)) * 100);
-  return {
-    standing: [
-      { text: `Margo takes your advice about ${trust}% of the time.`, good: trust >= 50 },
-      m.standing < 25 ? { text: 'One bad day from being fired.', good: false } : m.standing >= 60 ? { text: 'On track to pass probation (60+).', good: true } : { text: 'Review: 60+ hired, 40+ extended, under 40 let go.', good: m.standing >= 40 },
-      { text: 'Lose 15+ in one day and it\'s a strike.', good: true },
-    ],
-    runway: [
-      { text: `${runwayDays()} days of payroll left ($${PAYROLL.toLocaleString()} a weekday).`, good: runwayDays() >= 8 },
-      cardFrozen() ? { text: '🧊 Company card frozen: spending comes out of your pocket (stress).', good: false } : { text: 'Under 5 days, Finance freezes the company card.', good: true },
-    ],
-    morale: lowMorale()
-      ? [{ text: 'Low morale: meetings drag on 10 min longer.', good: false }, { text: 'Kendall is more likely to "help".', good: false }]
-      : highMorale()
-        ? [{ text: 'High morale: once a day, a teammate covers a meeting you would have missed.', good: true }, { text: 'Kendall is on their best behaviour.', good: true }]
-        : [{ text: 'Under 35, meetings start to drag. Over 70, teammates cover for you.', good: true }],
-    stress: stressPace() > 1
-      ? [{ text: `Frazzled: the day runs ${Math.round((stressPace() - 1) * 100)}% faster.`, good: false }, ...(m.stress >= 80 ? [{ text: 'Messages expire sooner. Burnout at 100.', good: false }] : [])]
-      : [{ text: 'Calm. Over 60 the day speeds up; at 100 you burn out.', good: true }, { text: 'Lunch, your own errands and weekends bring it down.', good: true }],
-  };
+  const kendallHere = S.dayIndex >= 7;
+  const adviceHere = S.dayIndex >= 2;
+  const trust = 0.25 + (m.standing - 40) / 100;
+  const trustLine: MeterEffect =
+    trust >= 0.65 ? { text: 'Margo trusts you. She usually takes your advice.', good: true }
+    : trust >= 0.45 ? { text: 'Margo is starting to trust you. Sometimes she listens.', good: true }
+    : trust >= 0.25 ? { text: "Margo isn't sure about you. She mostly goes with her gut.", good: false }
+    : { text: "Margo doesn't trust you. She ignores your advice.", good: false };
+  const standing: MeterEffect[] = [];
+  if (adviceHere) standing.push(trustLine);
+  if (m.standing < 25) standing.push({ text: 'One bad day from being fired.', good: false });
+  else if (m.standing >= 60) standing.push({ text: 'On track to pass probation.', good: true });
+  else if (m.standing < 40) standing.push({ text: "If your review were today, you'd be let go.", good: false });
+
+  const runway: MeterEffect[] = [{ text: `${runwayDays()} days of payroll left.`, good: runwayDays() >= 8 }];
+  if (cardFrozen()) runway.push({ text: '🧊 Company card frozen: spending comes out of your pocket.', good: false });
+
+  const morale: MeterEffect[] = [];
+  if (lowMorale()) {
+    morale.push({ text: 'Meetings are dragging on 10 min longer.', good: false });
+    if (kendallHere) morale.push({ text: 'Kendall is getting bolder.', good: false });
+  } else if (highMorale()) {
+    const used = S.flags.includes(`covered-${S.dayIndex}`);
+    morale.push({ text: used ? 'A teammate already covered for you today.' : 'A teammate will cover the next meeting you miss today.', good: true });
+    if (kendallHere) morale.push({ text: 'Kendall is on their best behaviour.', good: true });
+  }
+
+  const stress: MeterEffect[] = [];
+  if (stressPace() > 1) stress.push({ text: `Frazzled: the day is running ${Math.round((stressPace() - 1) * 100)}% faster.`, good: false });
+  if (m.stress >= 80) stress.push({ text: 'Messages are expiring sooner.', good: false });
+  return { standing, runway, morale, stress };
 }
 /** Today's calendars, minus anyone who has left (e.g. Dana after the board vote). */
 export const activeExecs = (): ExecId[] => day().execs.filter((x) => !S.flags.includes(`gone-${x}`));
@@ -48,6 +60,13 @@ export const unlockedApps = (): AppId[] => DAYS.slice(0, S.dayIndex + 1).flatMap
 export const hasApp = (a: AppId) => unlockedApps().includes(a);
 export const isNewApp = (a: AppId) => S.dayIndex > 0 && day().apps.includes(a);
 export const findEvent = (id: string | null) => S.events.find((e) => e.id === id);
+/** Your own personal events (lunch, the flat, Mum): skipping them costs stress, never standing. */
+export const isMyLife = (e: CalEvent) => e.kind === 'personal' && e.attendees.length === 1 && e.attendees[0] === 'me';
+function lifeOnly(e: CalEvent, fx: Effects): Effects {
+  if (!isMyLife(e)) return fx;
+  const hurt = Object.entries(fx).reduce((n, [k, v]) => n + (k === 'stress' ? Math.max(0, v as number) : Math.max(0, -(v as number))), 0);
+  return { stress: Math.max(3, Math.round(hurt)) };
+}
 const end = (e: CalEvent) => (e.start ?? 0) + e.duration;
 const overlaps = (a0: number, a1: number, b0: number, b1: number) => a0 < b1 && b0 < a1;
 const shares = (a: CalEvent, b: CalEvent) => a.attendees.some((x) => b.attendees.includes(x));
@@ -255,7 +274,7 @@ function advance() {
   for (const e of S.events) {
     if (e.status === 'pending' && e.deadline !== undefined && now >= e.deadline) {
       e.status = 'missed';
-      applyEffects(e.missPenalty ?? { standing: -5 }, `Never booked: ${e.title}`);
+      applyEffects(lifeOnly(e, e.missPenalty ?? { standing: -5 }), `Never booked: ${e.title}`);
       banner('calendar', '⏰ Deadline passed', `${e.title} never got booked.`);
       if (S.selected === e.id) S.selected = null;
     }
@@ -483,7 +502,7 @@ function finishEvent(e: CalEvent) {
   const r = Math.min(1, (ok - booked) / ok);
   const fx: Effects = {};
   for (const [k, v] of Object.entries(e.reward ?? {}) as [keyof Effects, number][]) if (v > 0) fx[k] = Math.round(v * (1 - r));
-  for (const [k, v] of Object.entries(e.missPenalty ?? { standing: -5 }) as [keyof Effects, number][]) {
+  for (const [k, v] of Object.entries(lifeOnly(e, e.missPenalty ?? { standing: -5 })) as [keyof Effects, number][]) {
     fx[k] = (fx[k] ?? 0) + Math.round(v * Math.min(0.5, r));
   }
   applyEffects(fx, `${e.title} got cut short (${booked} of ${ok} min).`);
@@ -536,7 +555,7 @@ export function wrapUpNow(id: string) {
 }
 
 export function bumpPenaltyFor(e: CalEvent): Effects {
-  const base: Effects = e.bumpPenalty ?? Object.fromEntries(Object.entries(e.declinePenalty ?? { standing: -3 }).map(([k, v]) => [k, Math.round((v as number) / 2)]));
+  const base: Effects = e.bumpPenalty ?? Object.fromEntries(Object.entries(lifeOnly(e, e.declinePenalty ?? { standing: -3 })).map(([k, v]) => [k, Math.round((v as number) / 2)]));
   const mult = 1 + (e.bumps ?? 0); // pushing the same thing twice annoys people more
   return Object.fromEntries(Object.entries(base).map(([k, v]) => [k, (v as number) * mult]));
 }
@@ -583,7 +602,7 @@ function missEvent(e: CalEvent, text: string) {
   }
   e.status = 'missed';
   if (S.selected === e.id) S.selected = null;
-  applyEffects({ ...(e.missPenalty ?? { standing: -5 }), stress: ((e.missPenalty?.stress ?? 0) + 3) }, text);
+  applyEffects({ ...(lifeOnly(e, e.missPenalty ?? { standing: -5 })), stress: ((e.missPenalty?.stress ?? 0) + 3) }, text);
   banner('calendar', '💥 Missed meeting', text);
   if (e.strikeOnMiss) addStrike(`You missed ${e.title}.`);
 }
@@ -672,7 +691,7 @@ export function declineEvent(id: string) {
   if (!e || e.fixed || (e.status !== 'pending' && e.status !== 'scheduled')) return;
   e.status = 'declined';
   S.selected = null;
-  applyEffects(e.declinePenalty ?? { standing: -3 }, `Declined: ${e.title}`);
+  applyEffects(lifeOnly(e, e.declinePenalty ?? { standing: -3 }), `Declined: ${e.title}`);
 }
 
 export function select(id: string | null) {
@@ -1088,7 +1107,7 @@ export function endDay() {
   for (const e of S.events) {
     if (e.status === 'pending') {
       e.status = 'missed';
-      applyEffects(e.missPenalty ?? { standing: -5 }, `Never booked: ${e.title}`, true);
+      applyEffects(lifeOnly(e, e.missPenalty ?? { standing: -5 }), `Never booked: ${e.title}`, true);
     }
   }
   for (const task of S.tasks) if (task.status === 'open') {
