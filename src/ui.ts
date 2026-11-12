@@ -113,6 +113,20 @@ function winCtrls(isSplit: boolean) {
 
 let lastWhere = '';
 
+/** Play a closed sidecar's exit: keep the old element on screen for a moment, sliding away. */
+function slideOut(el: HTMLElement, rect: DOMRect, isSplit: boolean) {
+  el.querySelectorAll<HTMLElement>('[style*="animation"]').forEach((x) => { x.style.animationDelay = '0ms'; });
+  el.classList.add('closing');
+  el.style.pointerEvents = 'none';
+  if (isSplit) {
+    // Pin it where it was, relative to the device frame (which never gets re-rendered).
+    const d = refs.device.getBoundingClientRect();
+    Object.assign(el.style, { position: 'absolute', inset: 'auto', top: `${rect.top - d.top - refs.device.clientTop}px`, left: `${rect.left - d.left - refs.device.clientLeft}px`, width: `${rect.width}px`, height: `${rect.height}px`, zIndex: '45' });
+  }
+  refs.device.append(el);
+  setTimeout(() => el.remove(), 240);
+}
+
 function render() {
   const isSplit = split.matches;
   refs.device.classList.toggle('is-split', isSplit);
@@ -127,6 +141,9 @@ function render() {
   refs.device.classList.toggle('tense', S.phase === 'day' && S.meters.stress >= 60 && S.meters.stress < 80);
   refs.device.classList.toggle('frazzled', S.phase === 'day' && S.meters.stress >= 80);
 
+  // Remember the open sidecar (if any) so it can slide out after this render removes it.
+  const oldSide = refs.main.querySelector<HTMLElement>('.drawer-wrap');
+  const oldRect = oldSide?.getBoundingClientRect();
   keepScroll(refs.main, () => {
     const panes: HTMLElement[] = [];
     if (isSplit) {
@@ -142,6 +159,7 @@ function render() {
     }
     refs.main.replaceChildren(...panes);
   });
+  if (oldSide && oldRect && !refs.main.querySelector('.drawer-wrap')) slideOut(oldSide, oldRect, isSplit);
 
   if (scrollTarget !== null) {
     const sc = refs.main.querySelector<HTMLElement>('.cal-scroll');

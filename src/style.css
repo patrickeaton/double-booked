@@ -750,3 +750,9 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .r-cool { --rc: #f5a524; } .r-cool .rel-word { color: #a16207; }
 .r-frosty { --rc: #e5484d; } .r-frosty .rel-word { color: #b42318; }
 .rel-line { font-size: 12px; font-weight: 700; padding: 6px 9px; border-radius: 10px; background: color-mix(in srgb, var(--rc) 12%, white); margin-bottom: 4px; }
+
+/* Sidecars slide out the way they came in */
+.drawer-wrap.closing .drawer { animation: slideout 0.22s ease-in forwards !important; }
+.drawer-wrap.closing .drawer-backdrop { animation: fadeout 0.22s ease-in forwards !important; }
+@keyframes slideout { to { transform: translateX(100%); } }
+@keyframes fadeout { to { opacity: 0; } }
