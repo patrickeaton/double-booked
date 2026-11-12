@@ -6,7 +6,10 @@ import {
   minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
   toggleSpeed, unschedule,
 } from './engine';
+import { avatarEl } from './avatars';
+import { coffeeOf, metPeople, statusOf } from './people';
 import { MAX_SHORTCUTS, addShortcut, removeShortcut, runShortcut, shortcutLabel } from './shortcuts';
+import { saveCalPrefs } from './state';
 import { METER_LABEL, S, dirty, fmtEffect, fmtMoney, isGood, readSave, setRenderer } from './state';
 import type { AppId, CalEvent, ExecId, InboxApp, Meter, RideAction } from './types';
 
@@ -212,7 +215,46 @@ const dangerCount = () => {
   return [m.standing <= 25, runwayDays() < 5, m.morale <= 25, m.stress >= 75].filter(Boolean).length + (S.strikes >= 2 ? 1 : 0);
 };
 
+let pulseTab: 'you' | 'team' = 'you';
+let openPerson: string | null = null;
+
+function renderTeam() {
+  const people = metPeople();
+  const work = people.filter((p) => !p.personal);
+  const life = people.filter((p) => p.personal);
+  const row = (p: (typeof people)[number]) => {
+    const open = openPerson === p.key;
+    const st = statusOf(p);
+    return h('div', { class: `person ${open ? 'open' : ''}` },
+      h('button', { class: 'person-row', onclick: () => { openPerson = open ? null : p.key; dirty(); } },
+        face(p.key, 44),
+        h('span', { class: 'person-text' }, h('b', {}, p.name), h('small', { class: 'muted' }, p.role), st && h('small', { class: 'person-status' }, st)),
+        h('span', { class: 'muted' }, open ? '▾' : '▸'),
+      ),
+      open && h('div', { class: 'person-more' },
+        h('p', {}, p.bio),
+        coffeeOf(p) && h('div', { class: 'small' }, '☕ ', coffeeOf(p)),
+        ...p.facts.map((x) => h('div', { class: 'small' }, '• ', x)),
+      ),
+    );
+  };
+  return [
+    h('h4', {}, 'Work'), ...work.map(row),
+    life.length > 0 && h('h4', {}, 'Your people'), ...life.map(row),
+  ];
+}
+
 function renderPulse() {
+  const tabs = h('div', { class: 'seg pulse-tabs' },
+    h('button', { class: `seg-btn ${pulseTab === 'you' ? 'on' : ''}`, onclick: () => { pulseTab = 'you'; dirty(); } }, '📊 You'),
+    h('button', { class: `seg-btn ${pulseTab === 'team' ? 'on' : ''}`, onclick: () => { pulseTab = 'team'; dirty(); } }, `👥 Team · ${metPeople().length}`),
+  );
+  if (pulseTab === 'team') {
+    return h('div', { class: 'app pulse' },
+      head('Pulse', 'Everyone you\'ve met'),
+      h('div', { class: 'scroll', 'data-keep': 'pulse-team' }, tabs, ...renderTeam()),
+    );
+  }
   const fx = meterEffects();
   const m = S.meters;
   const delta = (k: Meter) => Math.round(m[k] - S.startMeters[k]);
@@ -231,6 +273,7 @@ function renderPulse() {
   return h('div', { class: 'app pulse' },
     head('Pulse', 'Your HR file (Bev can see this)'),
     h('div', { class: 'scroll', 'data-keep': 'pulse' },
+      tabs,
       h('div', { class: 'pulse-strikes' },
         h('b', {}, 'Strikes'), h('div', { class: 'strikes big' }, ...[0, 1, 2].map((i) => h('span', { class: i < S.strikes ? 'on' : '' }, '✕'))),
         h('small', { class: 'muted' }, 'Three and you are out.'),
@@ -288,14 +331,16 @@ function renderDock(isSplit: boolean) {
 // ───────────────────────────── calendar ─────────────────────────────
 function renderCalendar() {
   const d = day();
-  const execs = activeExecs();
+  const execs = visibleExecs();
   const pending = S.events.filter((e) => e.status === 'pending');
   const sel = findEvent(S.selected);
 
+  const hiddenN = activeExecs().length - execs.length;
   const header = h('header', { class: 'app-head' },
-    h('h2', {}, 'Calendar'),
+    h('h2', { class: 'cal-title' }, 'Calendar',
+      activeExecs().length > 1 && h('button', { class: 'cal-manage', onclick: () => { calSheet = true; dirty(); } }, '☰ Calendars', hiddenN > 0 && h('span', { class: 'start-count', title: `${hiddenN} hidden` }, `−${hiddenN}`))),
     S.phase === 'prep'
-      ? h('span', { class: 'muted' }, 'Before 9am. Plan the day.')
+      ? h('span', { class: 'muted' }, 'Plan before 9am')
       : h('span', { class: 'muted' }, S.phase === 'day' ? (d.weekend ? '🌴 Weekend. Technically.' : `${fmt(S.now)} · ends ${fmt(DAY_END)}`) : ''),
   );
 
@@ -309,7 +354,7 @@ function renderCalendar() {
 
   const heads = h('div', { class: 'cal-heads' },
     h('div', { class: 'gutter' }),
-    ...execs.map((x) => h('div', { class: 'cal-head', style: `--c:${EXECS[x].color}` }, h('span', { class: 'avatar' }, EXECS[x].emoji), h('span', {}, h('b', {}, EXECS[x].short), h('small', {}, EXECS[x].title)))),
+    ...execs.map((x) => h('div', { class: 'cal-head', style: `--c:${EXECS[x].color}` }, x === 'team' ? h('span', { class: 'avatar' }, EXECS[x].emoji) : face(x, 28), h('span', {}, h('b', {}, EXECS[x].short), h('small', {}, EXECS[x].title)))),
   );
 
   const height = (CAL_END - CAL_START) * PX;
@@ -586,6 +631,11 @@ function renderApp(app: AppId): HTMLElement {
 const head = (title: string, sub?: Child, right?: Child) =>
   h('header', { class: 'app-head' }, h('h2', {}, title, sub && h('small', {}, sub)), right);
 
+/** A cartoon face if we know them, otherwise the old initial-in-a-circle. */
+function face(name: string, size = 30, cls = ''): HTMLElement {
+  return avatarEl(name, size, cls) ?? h('span', { class: 'avatar-dot', style: `background:${avatarColor(name)};width:${size}px;height:${size}px` }, name.replace(/^Voicemail · /, '')[0]);
+}
+
 const avatarColor = (name: string) => {
   if (name.startsWith('Margo')) return EXECS.margo.color;
   if (name.startsWith('Theo')) return EXECS.theo.color;
@@ -623,7 +673,7 @@ type Msg = (typeof S.messages)[number];
 
 function mailRow(m: Msg) {
   return h('button', { class: `mail-row ${m.read ? '' : 'unread'} ${S.openMail === m.id ? 'sel' : ''}`, onclick: () => { S.openMail = m.id; dirty(); } },
-    h('span', { class: 'avatar-dot', style: `background:${avatarColor(m.from)}` }, m.from[0]),
+    face(m.from),
     h('span', { class: 'mail-row-text' },
       h('span', { class: 'mail-row-top' }, h('b', {}, m.from), h('span', { class: 'muted small' }, msgTime(m))),
       h('span', { class: 'mail-subj' }, m.choices && m.chosen === undefined ? '⚡ ' : '', m.subject ?? ''),
@@ -636,7 +686,7 @@ function mailBody(open: Msg) {
   open.read = true;
   return h('div', { class: 'scroll', 'data-keep': `mail-${open.id}` },
     h('article', { class: 'mail-open' },
-      h('div', { class: 'mail-from' }, h('span', { class: 'avatar-dot', style: `background:${avatarColor(open.from)}` }, open.from[0]), h('div', {}, h('b', {}, open.from), h('div', { class: 'muted small' }, msgTime(open)))),
+      h('div', { class: 'mail-from' }, face(open.from, 36), h('div', {}, h('b', {}, open.from), h('div', { class: 'muted small' }, msgTime(open)))),
       h('h3', {}, open.subject ?? '(no subject)'),
       h('div', { class: 'mail-body' }, open.body),
       choiceButtons(open),
@@ -704,7 +754,7 @@ function threadRow(app: InboxApp, t: ReturnType<typeof threadsFor>[number], sele
   const pending = t.ms.some((m) => m.choices && m.chosen === undefined);
   const name = t.last.from.replace(/^Voicemail · /, '');
   return h('button', { class: `mail-row thread-row ${unread ? 'unread' : ''} ${selected ? 'sel' : ''}`, onclick: () => { openThread[app] = t.key; dirty(); } },
-    h('span', { class: 'avatar-dot', style: `background:${avatarColor(name)}` }, name[0]),
+    face(name, 38),
     h('span', { class: 'mail-row-text' },
       h('span', { class: 'mail-row-top' }, h('b', {}, name), h('span', { class: 'muted small' }, msgTime(t.last))),
       h('span', { class: 'muted small clamp' }, pending ? '⚡ ' : '', t.last.body),
@@ -719,7 +769,7 @@ function threadBody(app: InboxApp, msgs: Msg[]) {
     ...msgs.flatMap((m, i) => [
       (i === 0 || (msgs[i - 1].day ?? 0) !== (m.day ?? 0)) ? h('div', { class: 'day-sep' }, dayName(m.day ?? 0)) : null,
       h('div', { class: 'bubble-row' },
-        h('span', { class: 'avatar-dot', style: `background:${avatarColor(m.from)}` }, m.from[0]),
+        face(m.from),
         h('div', { class: 'bubble-wrap' },
           h('div', { class: 'bubble-meta' }, h('b', {}, m.from), h('span', { class: 'muted small' }, fmt(m.at))),
           h('div', { class: 'bubble' }, m.body),
@@ -918,7 +968,7 @@ function renderNotes() {
       ...activeExecs().filter(isBoss).map((x) => {
         const e = EXECS[x];
         return h('div', { class: 'dossier', style: `--c:${e.color}` },
-          h('div', { class: 'dossier-head' }, h('span', { class: 'avatar' }, e.emoji), h('div', {}, h('b', {}, e.name), h('div', { class: 'muted small' }, e.title))),
+          h('div', { class: 'dossier-head' }, face(x, 32), h('div', {}, h('b', {}, e.name), h('div', { class: 'muted small' }, e.title))),
           h('div', { class: 'small' }, '☕ ', S.flags.includes(`drink-${x}`) ? drinkName(e.drink) : '??? (listen for clues)'),
           ...e.quirks.map((q) => h('div', { class: 'small' }, '• ', q)),
         );
@@ -1029,6 +1079,7 @@ function renderOverlay(): HTMLElement | null {
   if (S.phase === 'over') return renderOver();
   if (S.phase === 'end') return renderEnd();
   if (S.call) return renderCall();
+  if (calSheet) return renderCalSheet();
   if (S.sheet) return renderSheet();
   return null;
 }
@@ -1071,7 +1122,7 @@ function renderMemo() {
       const fresh = d.execs.filter((x) => !prev.includes(x));
       return fresh.length > 0 && h('div', { class: 'new-apps' },
         h('h4', {}, S.dayIndex === 0 ? 'Your calendars' : '📅 New calendar to manage'),
-        ...fresh.map((x) => h('div', { class: 'new-app' }, h('span', { class: 'avatar', style: `--c:${EXECS[x].color}` }, EXECS[x].emoji),
+        ...fresh.map((x) => h('div', { class: 'new-app' }, x === 'team' ? h('span', { class: 'avatar', style: `--c:${EXECS[x].color}` }, EXECS[x].emoji) : face(x, 36),
           h('div', {}, h('b', {}, `${EXECS[x].name} · ${EXECS[x].title}`), h('div', { class: 'small muted' }, EXECS[x].quirks[0])))));
     })(),
     d.rules.length > 0 && h('div', { class: 'rules' }, h('h4', {}, "Today's rules"), ...d.rules.map((r) => h('div', { class: 'rule' }, '📌 ', RULES[r].text))),
@@ -1097,7 +1148,7 @@ function renderReview() {
       h('h1', {}, wk ? (day().weekday === 'Sat' ? 'Saturday, done.' : 'Sunday night. Rested-ish.') : '6:00pm. You survived.'),
     ),
     h('div', { class: 'cs-body', 'data-keep': 'review' },
-    h('div', { class: 'boss-note' }, h('span', { class: 'avatar' }, '🌱'), h('div', {}, h('b', {}, 'Margo'), h('div', {}, r.bossNote))),
+    h('div', { class: 'boss-note' }, face('margo', 36), h('div', {}, h('b', {}, 'Margo'), h('div', {}, r.bossNote))),
     h('div', { class: 'deltas' }, ...(['standing', 'runway', 'morale', 'stress'] as Meter[]).map(row)),
     r.highlights.length > 0 && h('h4', {}, 'Highlights'),
     ...r.highlights.map((l) => h('div', { class: 'highlight' }, h('span', { class: 'muted small' }, fmt(l.at)), h('span', {}, l.text),
@@ -1189,7 +1240,7 @@ function renderCall() {
   const c = S.call!;
   if (c.status === 'ringing') {
     return h('div', { class: 'call ringing' },
-      h('div', { class: 'call-avatar' }, c.from[0]),
+      face(c.from, 96, 'call-face') ?? h('div', { class: 'call-avatar' }, c.from[0]),
       h('h2', {}, c.from),
       h('p', { class: 'muted' }, `Incoming call… (${Math.max(0, c.ringUntil - S.now)} min)`),
       h('div', { class: 'call-btns' },
@@ -1199,10 +1250,59 @@ function renderCall() {
     );
   }
   return h('div', { class: 'call active' },
-    h('div', { class: 'call-avatar small' }, c.from[0]),
+    face(c.from, 64, 'call-face') ?? h('div', { class: 'call-avatar small' }, c.from[0]),
     h('h3', {}, c.from),
     h('div', { class: 'call-lines' }, ...c.lines.map((l) => h('p', {}, l))),
     h('div', { class: 'stack' }, ...c.choices.map((ch, i) => h('button', { class: 'btn choice', onclick: () => chooseCall(i) }, ch.label))),
+  );
+}
+
+let calSheet = false;
+
+/** Calendars in your chosen order, minus hidden ones. */
+function visibleExecs(): ExecId[] {
+  const active = activeExecs();
+  const order = [...S.calPrefs.order.filter((x) => active.includes(x)), ...active.filter((x) => !S.calPrefs.order.includes(x))];
+  const shown = order.filter((x) => !S.calPrefs.hidden.includes(x));
+  return shown.length ? shown : order.slice(0, 1);
+}
+
+function renderCalSheet() {
+  const active = activeExecs();
+  const order = [...S.calPrefs.order.filter((x) => active.includes(x)), ...active.filter((x) => !S.calPrefs.order.includes(x))];
+  const move = (i: number, d: number) => {
+    const o = [...order];
+    const j = i + d;
+    if (j < 0 || j >= o.length) return;
+    [o[i], o[j]] = [o[j], o[i]];
+    S.calPrefs.order = o;
+    saveCalPrefs();
+    dirty();
+  };
+  const toggle = (x: ExecId) => {
+    const hid = S.calPrefs.hidden;
+    S.calPrefs.hidden = hid.includes(x) ? hid.filter((y) => y !== x) : [...hid, x];
+    saveCalPrefs();
+    dirty();
+  };
+  const close = () => { calSheet = false; dirty(); };
+  return h('div', { class: 'sheet-wrap', onclick: (e: Event) => { if (e.target === e.currentTarget) close(); } },
+    h('div', { class: 'sheet' },
+      h('div', { class: 'sheet-grab' }),
+      h('h3', {}, 'Calendars'),
+      h('p', { class: 'muted small' }, 'Show, hide and reorder. Hidden calendars still happen. You just can\'t see them.'),
+      ...order.map((x, i) => {
+        const hidden = S.calPrefs.hidden.includes(x);
+        return h('div', { class: `cal-pref ${hidden ? 'off' : ''}` },
+          x === 'team' ? h('span', { class: 'avatar', style: `--c:${EXECS[x].color}` }, EXECS[x].emoji) : face(x, 32),
+          h('span', { class: 'cal-pref-name' }, h('b', {}, EXECS[x].short), h('small', { class: 'muted' }, EXECS[x].title)),
+          h('button', { class: 'btn', disabled: i === 0, onclick: () => move(i, -1), title: 'Move up' }, '↑'),
+          h('button', { class: 'btn', disabled: i === order.length - 1, onclick: () => move(i, 1), title: 'Move down' }, '↓'),
+          h('button', { class: `btn ${hidden ? '' : 'primary'}`, onclick: () => toggle(x) }, hidden ? 'Show' : 'Shown'),
+        );
+      }),
+      h('div', { class: 'stack' }, h('button', { class: 'btn primary big', onclick: close }, 'Done')),
+    ),
   );
 }
 

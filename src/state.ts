@@ -1,4 +1,4 @@
-import type { AppId, CalEvent, CallState, Effects, LogEntry, Message, Meter, Order, Script, Shortcut, Task } from './types';
+import type { AppId, CalEvent, CallState, Effects, ExecId, LogEntry, Message, Meter, Order, Script, Shortcut, Task } from './types';
 
 export type Phase = 'title' | 'memo' | 'prep' | 'day' | 'review' | 'over' | 'end';
 
@@ -52,6 +52,8 @@ export interface GameState {
   endless: boolean;
   /** Kendall's track record (for the review and the ending). */
   kendall: { helped: number; sabotaged: number };
+  /** Calendar layout: column order and hidden calendars. */
+  calPrefs: { order: ExecId[]; hidden: ExecId[] };
   toasts: Toast[];
   sheet: Sheet | null;
   review: Review | null;
@@ -91,6 +93,7 @@ export const S: GameState = {
   savedDrinks: [],
   endless: false,
   kendall: { helped: 0, sabotaged: 0 },
+  calPrefs: readCalPrefs(),
   toasts: [],
   sheet: null,
   review: null,
@@ -155,6 +158,24 @@ export function addStrike(note: string) {
   S.strikes++;
   S.strikeNotes.push(note);
   banner('calendar', '📅 Margo invited you: "Quick chat? 🙂"', note);
+}
+
+// ───────────── calendar layout (a display preference, saved on every change) ─────────────
+function readCalPrefs(): { order: ExecId[]; hidden: ExecId[] } {
+  try {
+    const raw = localStorage.getItem('double-booked-calendars');
+    if (raw) return JSON.parse(raw);
+  } catch {
+    /* storage may be unavailable */
+  }
+  return { order: [], hidden: [] };
+}
+export function saveCalPrefs() {
+  try {
+    localStorage.setItem('double-booked-calendars', JSON.stringify(S.calPrefs));
+  } catch {
+    /* storage may be unavailable */
+  }
 }
 
 // ───────────── save / load ─────────────
