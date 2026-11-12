@@ -348,6 +348,7 @@ function advance() {
     if (m.choices && m.chosen === undefined && m.expires !== undefined && now >= m.expires) {
       m.chosen = -1;
       fxFor([m.from], m.timeoutEffects ?? { stress: 3 }, m.timeoutLog ?? `Ignored ${m.from}.`);
+      followUp(m);
     }
   }
 
@@ -518,7 +519,12 @@ function startEventRaw(e: CalEvent) {
 
   for (const id of day().rules) {
     const r = RULES[id];
-    if (ruled(e) && r.check(e)) fxFor([RULE_WHO[id]], r.penalty, `Broke a rule (${r.short}): ${e.title}`);
+    if (ruled(e) && r.check(e)) {
+      // Everyone's-invited things (All-hands, fire drills) are understood. Mostly.
+      const teamWide = e.attendees.includes('team') || e.attendees.length >= 3;
+      const pen = teamWide ? Object.fromEntries(Object.entries(r.penalty).map(([k, v]) => [k, Math.round((v as number) * 0.3)])) : r.penalty;
+      fxFor([RULE_WHO[id]], pen, teamWide ? `${e.title} landed in a rule (${r.short}). Company-wide, so mostly forgiven.` : `Broke a rule (${r.short}): ${e.title}`);
+    }
   }
   if (e.window && e.start !== null && (e.start < e.window[0] || e.start > e.window[1])) {
     applyEffects({ standing: -4 }, `Wrong time for ${e.title}`);
@@ -920,7 +926,9 @@ export function issuesFor(e: CalEvent): Issue[] {
   for (const id of day().rules) if (ruled(e) && RULES[id].check(e)) out.push({ icon: '⚠️', text: RULES[id].short, bad: true });
   if (e.kind === 'work') {
     const hit = S.events.find((o) => o !== e && active(o) && blocks(o) && shares(o, e) && o.start !== null && overlaps(s, end(e), occStart(o), occEnd(o)));
-    out.push(hit ? { icon: '⚡', text: `${hit.title} will interrupt it`, bad: true } : { icon: '🎧', text: 'Heads-down time', bad: false });
+    const twin = S.events.find((o) => o !== e && o.kind === 'work' && active(o) && shares(o, e) && o.start !== null && overlaps(s, end(e), o.start, end(o)));
+    if (twin) out.push({ icon: '⛔', text: `Clashes with ${twin.title}`, bad: true });
+    else out.push(hit ? { icon: '⚡', text: `${hit.title} will interrupt it`, bad: true } : { icon: '🎧', text: 'Heads-down time', bad: false });
   }
   if (e.window && (s < e.window[0] || s > e.window[1])) out.push({ icon: '🕒', text: `Should start ${fmt(e.window[0])}–${fmt(e.window[1])}`, bad: true });
   if (e.prep) {
@@ -944,6 +952,26 @@ export function issuesFor(e: CalEvent): Issue[] {
 // ───────────────────────────── messages ─────────────────────────────
 
 const APP_OF: Record<string, AppId> = { mail: 'mail', huddle: 'huddle', messages: 'messages' };
+
+/** You missed it, but it isn't over: they come back once, a bit later. Answering late still works, just for less upside. */
+function followUp(m: Message) {
+  if (m.followUp || !m.choices) return;
+  const at = Math.min(S.now + 35, DAY_END - 20);
+  if (at <= S.now) return;
+  const halfUp = (fx?: Effects): Effects => Object.fromEntries(Object.entries(fx ?? {}).map(([k, v]) => [k, (k === 'stress' ? (v as number) < 0 : (v as number) > 0) ? Math.round((v as number) / 2) : v]));
+  const short = m.body.length > 110 ? `${m.body.slice(0, 107)}…` : m.body;
+  S.queue.push({
+    at, type: 'msg',
+    msg: {
+      app: m.app, from: m.from, subject: m.subject ? `Re: ${m.subject}` : undefined,
+      body: m.app === 'mail' ? `Following up on this, since I haven't heard back:\n\n"${short}"` : `hello?? still need an answer on this 👇\n"${short}"`,
+      followUp: true, advice: m.advice,
+      expiresIn: 45, timeoutEffects: m.timeoutEffects, timeoutLog: m.timeoutLog ? `${m.timeoutLog} (Twice.)` : undefined,
+      choices: m.choices.map((c) => ({ ...c, label: `${c.label}`, effects: halfUp(c.effects), log: c.log ? `${c.log} (Late.)` : undefined })),
+    },
+  });
+  S.queue.sort((a, b) => a.at - b.at);
+}
 
 export function addMessage(def: MsgDef, quiet = false): Message {
   if (!hasApp(def.app)) def = { ...def, app: 'huddle' }; // apps you don't have yet fall back to chat

@@ -122,6 +122,8 @@ export interface MsgDef {
   subject?: string;
   body: string;
   choices?: Choice[];
+  /** A second chance at a message you didn't answer in time (no further follow-ups). */
+  followUp?: boolean;
   /** Margo asks your advice. `gut` is what she leans towards; she may ignore you and do that instead. */
   advice?: { gut: number };
   expiresIn?: number;

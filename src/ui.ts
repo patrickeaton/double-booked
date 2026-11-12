@@ -385,14 +385,27 @@ const CORE_APPS: AppId[] = ['calendar', 'mail', 'huddle', 'messages', 'notes'];
 let moreOpen = false;
 let moreBorn = 0;
 
+/** Requests you haven't looked at yet make the 📥 icon (and the Calendar app) pulse. */
+const seenReq = new Set<string>();
+const unseenRequests = () => S.events.filter((e) => e.status === 'pending' && !seenReq.has(e.id)).length;
+/** Keep an infinite pulse in phase across re-renders. */
+const pulsePhase = () => `animation-delay:-${Math.round(performance.now() % 1400)}ms`;
+
 function renderDock(isSplit: boolean) {
-  const all = APPS.filter((a) => hasApp(a.id) && !(isSplit && a.id === 'calendar'));
+  const all = APPS.filter((a) => hasApp(a.id));
   const core = CORE_APPS.flatMap((id) => all.filter((a) => a.id === id));
   const extra = all.filter((a) => !CORE_APPS.includes(a.id));
   const icon = (a: (typeof APPS)[number], close = false) => {
     const n = badgeFor(a.id);
-    return h('button', { class: `dock-app ${S.app === a.id ? 'active' : ''}`, onclick: () => { if (close) moreOpen = false; if (a.id !== 'calendar') { drawerOpen = false; detailOpen = false; S.selected = null; } if (layout === 'cal') layout = 'split'; openApp(a.id); } },
-      h('span', { class: 'app-icon', style: `background:${a.color}` }, a.icon,
+    const cal = a.id === 'calendar';
+    const pulse = cal && unseenRequests() > 0;
+    // Tablet: the calendar is always on screen, so its icon opens Requests (or toggles full-screen calendar).
+    const onCal = () => {
+      if (n > 0) { drawerOpen = true; S.selected = null; } else layout = layout === 'cal' ? 'split' : 'cal';
+      dirty();
+    };
+    return h('button', { class: `dock-app ${(isSplit ? cal && layout === 'cal' : S.app === a.id) ? 'active' : ''}`, onclick: () => { if (close) moreOpen = false; if (isSplit && cal) return onCal(); if (!cal) { drawerOpen = false; detailOpen = false; S.selected = null; } if (layout === 'cal') layout = 'split'; openApp(a.id); } },
+      h('span', { class: `app-icon ${pulse ? 'pulse' : ''}`, style: `background:${a.color};${pulse ? pulsePhase() : ''}` }, a.icon,
         n > 0 ? h('span', { class: 'badge' }, n) : isNewApp(a.id) ? h('span', { class: 'badge new' }, 'NEW') : null),
       h('span', { class: 'app-name' }, a.name),
     );
@@ -468,6 +481,8 @@ function renderCalendar() {
   const today = viewDay === S.dayIndex;
   const ahead = findFuture(S.selected);
   const sel = findEvent(S.selected) ?? ahead?.e ?? null;
+  if (drawerOpen) for (const e of pending) seenReq.add(e.id);
+  if (sel && sel.status === 'pending') seenReq.add(sel.id);
   // A newly tapped event opens its details in the sidecar (every screen size).
   if (S.selected !== lastSel) {
     lastSel = S.selected;
@@ -480,7 +495,7 @@ function renderCalendar() {
     h('h2', { class: 'cal-title' }, 'Calendar',
       activeExecs().length > 1 && h('button', { class: 'cal-manage', onclick: () => { calSheet = true; dirty(); } }, '☰', h('span', { class: 'cm-text' }, ' Calendars'), hiddenN > 0 && h('span', { class: 'start-count', title: `${hiddenN} hidden` }, `−${hiddenN}`))),
     h('div', { class: 'cal-head-right' },
-      h('button', { class: `req-icon ${pending.length ? 'has' : ''}`, onclick: () => { drawerOpen = true; S.selected = null; dirty(); }, title: 'Requests', 'aria-label': `Requests (${pending.length})` },
+      h('button', { class: `req-icon ${pending.length ? 'has' : ''} ${unseenRequests() ? 'pulse' : ''}`, style: unseenRequests() ? pulsePhase() : '', onclick: () => { drawerOpen = true; S.selected = null; dirty(); }, title: 'Requests', 'aria-label': `Requests (${pending.length})` },
         '📥', pending.length > 0 && h('span', { class: 'badge' }, pending.length)),
       renderDayNav()),
   );
@@ -597,8 +612,17 @@ function renderCalendar() {
 
 const t9 = () => 9 * 60;
 
+/** When each new item first appeared, so its arrival animation plays once (not on every redraw). */
+const arrivedAt = new Map<string, number>();
+function arriveDelay(e: CalEvent) {
+  if (!e.fresh) return '';
+  const now = performance.now();
+  if (!arrivedAt.has(e.id)) arrivedAt.set(e.id, now);
+  return `animation-delay:${arrivedAt.get(e.id)! - now}ms;`;
+}
+
 function renderCard(e: CalEvent) {
-  const card = h('div', { class: `req ${S.selected === e.id ? 'selected' : ''} ${e.fresh ? 'fresh' : ''}`, style: `--c:${EXECS[e.attendees[0]].color}` },
+  const card = h('div', { class: `req ${S.selected === e.id ? 'selected' : ''} ${e.fresh ? 'fresh' : ''}`, style: `${arriveDelay(e)}--c:${EXECS[e.attendees[0]].color}` },
     h('div', { class: 'req-top' },
       h('b', {}, e.title),
       h('span', { class: 'dur' }, `${e.duration}m`),
@@ -656,7 +680,7 @@ function renderBlock(e: CalEvent) {
   const movable = !e.fixed && e.status === 'scheduled';
   const small = e.duration * PX < 34;
   const cls = ['evt', e.duration * PX >= 70 ? 'tall' : '', `st-${e.status}`, `k-${e.kind ?? 'meeting'}`, bad ? 'has-issue' : '', S.selected === e.id ? 'selected' : '', movable ? 'movable' : '', small ? 'small' : '', e.attendees.length > 1 ? 'multi' : '', e.fresh ? 'fresh' : ''].join(' ');
-  const el = h('div', { class: cls, style: `top:${(start - CAL_START) * PX}px;height:${Math.max(16, e.duration * PX - 2)}px;--c:${EXECS[e.attendees[0]].color}` },
+  const el = h('div', { class: cls, style: `${arriveDelay(e)}top:${(start - CAL_START) * PX}px;height:${Math.max(16, e.duration * PX - 2)}px;--c:${EXECS[e.attendees[0]].color}` },
     e.editedBy && e.status === 'scheduled' && h('span', { class: 'edited-mark', title: `Edited by ${e.editedBy}` }, '✏️'),
     h('div', { class: 'evt-title' }, e.status === 'missed' ? '💥 ' : e.status === 'done' ? '✓ ' : '', e.kind === 'personal' && e.attendees.includes('me') ? '🏠 ' : '', e.title),
     !small && h('div', { class: 'evt-time' }, span2(start, start + e.duration), e.overranBy ? ` (+${e.overranBy}m)` : ''),
@@ -1340,7 +1364,11 @@ function renderTably() {
     head('Tably', 'Tonight'),
     h('div', { class: 'scroll', 'data-keep': 'tably' },
       ...open.map((x) => h('div', { class: `task ${x.status}` }, h('span', {}, x.status === 'done' ? '✅' : x.status === 'failed' ? '❌' : '⬜'), h('span', {}, x.text))),
-      h('div', { class: 'seg' }, ...[2, 4, 6].map((n) => h('button', { class: `seg-btn ${tablyParty === n ? 'on' : ''}`, onclick: () => { tablyParty = n; dirty(); } }, `👥 ${n}`))),
+      h('div', { class: 'stepper party' },
+        h('span', { class: 'small muted lbl' }, 'Party'),
+        h('button', { class: 'd-step', disabled: tablyParty <= 1, onclick: () => { tablyParty--; dirty(); } }, '−'),
+        h('b', { class: 'party-n' }, `👥 ${tablyParty}`),
+        h('button', { class: 'd-step', disabled: tablyParty >= 10, onclick: () => { tablyParty++; dirty(); } }, '+')),
       ...RESTAURANTS.map((r) => h('div', { class: 'resto' },
         h('div', { class: 'resto-head' }, h('span', { class: 'product-emoji' }, r.emoji), h('div', {}, h('b', {}, r.name), h('div', { class: 'small muted' }, r.blurb))),
         h('div', { class: 'slots' }, ...TABLE_TIMES.map((tm) => {
