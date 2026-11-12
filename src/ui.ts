@@ -1331,14 +1331,29 @@ function renderCard$() {
   );
 }
 
+/** Where each kind of to-do gets done. */
+const TASK_APP: Record<string, AppId> = { coffee: 'brew', gift: 'bundl', reservation: 'tably' };
+
 function renderNotes() {
   const d = day();
+  const openTasks = S.tasks.filter((t) => t.status === 'open').sort((a, b) => a.deadline - b.deadline);
+  const doneTasks = S.tasks.filter((t) => t.status !== 'open');
   return h('div', { class: 'app notes' },
     head('Notes', 'Your survival guide'),
     h('div', { class: 'scroll', 'data-keep': 'notes' },
-      h('h4', {}, 'To-do'),
-      S.tasks.length === 0 ? h('p', { class: 'muted small' }, 'Nothing yet. Enjoy it.') : null,
-      ...S.tasks.map((t) => h('div', { class: `task ${t.status}` }, h('span', {}, t.status === 'done' ? '✅' : t.status === 'failed' ? '❌' : '⬜'), h('span', {}, t.text, h('small', { class: 'muted' }, ` · by ${fmt(t.deadline)}`)))),
+      h('h4', {}, 'To-do', openTasks.length > 0 && h('span', { class: 'count' }, openTasks.length)),
+      openTasks.length === 0 ? h('p', { class: 'muted small' }, S.tasks.length ? 'All done. For now.' : 'Nothing yet. Enjoy it.') : null,
+      ...openTasks.map((t) => {
+        const left = t.deadline - S.now;
+        const app = TASK_APP[t.kind];
+        return h('div', { class: `task open ${left <= 20 ? 'urgent' : ''}` },
+          h('span', { class: 'task-box' }, '⬜'),
+          h('span', { class: 'task-text' }, t.text.replace(/\s*\(by [^)]*\)/, ''),
+            h('small', { class: `muted ${left <= 20 ? 'bad' : ''}` }, ` · by ${fmt(t.deadline)}${S.phase === 'day' ? (left <= 0 ? ' · now' : ` · ${left}m left`) : ''}`)),
+          hasApp(app) && h('button', { class: 'task-go', onclick: () => openApp(app) }, `${appOf(app).icon} Open ${appOf(app).name}`));
+      }),
+      doneTasks.length > 0 && h('div', { class: 'task-done' },
+        ...doneTasks.map((t) => h('div', { class: `task ${t.status}` }, h('span', {}, t.status === 'done' ? '✅' : '❌'), h('span', {}, t.text.replace(/\s*\(by [^)]*\)/, ''))))),
       h('h4', {}, "Today's rules"),
       ...d.rules.map((r) => h('div', { class: 'rule' }, '📌 ', RULES[r].text)),
       h('h4', {}, 'Dossier'),

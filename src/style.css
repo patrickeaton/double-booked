@@ -819,3 +819,12 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 /* No scrollbars: they flashed up every time the clock moved the page */
 * { scrollbar-width: none; }
 *::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+/* Notes to-dos: open ones first, each with a shortcut to the app that does it */
+.notes h4 .count { margin-left: 6px; background: #e5484d; color: #fff; border-radius: 99px; padding: 1px 7px; font-size: 11px; vertical-align: 2px; }
+.task.open { align-items: center; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; margin-bottom: 6px; }
+.task.open.urgent { border-color: #ffb4a8; box-shadow: inset 3px 0 0 #e5484d; }
+.task-text { flex: 1; min-width: 160px; }
+.task small.bad { color: var(--bad); font-weight: 700; }
+.task-go { background: #ece8de; border-radius: 99px; padding: 5px 10px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.task-done { opacity: 0.75; margin-top: 4px; }
