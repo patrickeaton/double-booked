@@ -556,7 +556,7 @@ function renderCalendar() {
     if (m % 60 === 0) gutter.append(h('span', { class: 'hour', style: `top:${(m - CAL_START) * PX}px` }, fmt(m).replace(':00', '')));
   }
 
-  const cols = execs.map((x) => {
+  const cols = execs.map((x, ci) => {
     const col = h('div', { class: 'cal-col', 'data-exec': x, style: `height:${height}px; --c:${EXECS[x].color}` });
     col.append(h('div', { class: 'off-hours', style: `top:0;height:${(t9() - CAL_START) * PX}px` }));
     col.append(h('div', { class: 'off-hours', style: `top:${(DAY_END - CAL_START) * PX}px;height:${(CAL_END - DAY_END) * PX}px` }));
@@ -583,7 +583,7 @@ function renderCalendar() {
         col.append(el);
       }
     }
-    if (S.phase === 'day' && today) col.append(h('div', { class: 'now-line glide', style: `top:${(S.now - CAL_START) * PX}px;${glideStyle()}` }));
+    if (S.phase === 'day' && today) col.append(h('div', { class: `now-line glide ${ci === 0 ? 'first' : ''}`, style: `top:${(S.now - CAL_START) * PX}px;${glideStyle()}` }));
     col.addEventListener('click', (ev) => {
       if ((ev.target as HTMLElement).closest('.evt') || !S.selected || Date.now() < suppressUntil) return;
       placeEvent(S.selected, minuteAt(col, (ev as MouseEvent).clientY), false, viewDay);

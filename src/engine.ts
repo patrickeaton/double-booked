@@ -3,7 +3,7 @@ import { drinkEmoji, drinkMatch, drinkName, drinkPrice } from './drinks';
 import { CAL_START, DAY_END, DAY_START, EXECS, PAYROLL, PREP_TIME, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, fmt, t } from './data';
 import {
   S, START_METERS, addStrike, applyEffects, banner, dirty, fmtMoney, readSave, uid, writeSave, clearSave,
-  about, fxFor, relOf, REL_PEOPLE, peopleIn, relName } from './state';
+  about, fxFor, relOf, REL_PEOPLE, peopleIn, relName, PERSONAL } from './state';
 import { offerShortcut } from './shortcuts';
 import { generateAdhoc } from './adhoc';
 import { ticketsFor } from './tickets';
@@ -1065,9 +1065,31 @@ function chooseRaw(msgId: string, idx: number) {
 }
 
 // ───────────────────────────── friendly replies ─────────────────────────────
-const HELLO = /\b(hi|hello|hey|welcome|heard you're|nice to meet)\b/i;
-const WARM = ['"Thanks for the heads-up 🙂"', '"Ha, love that"', '"Appreciate it 🙏"', '"Happy to help!"', '"Noted, thank you!"', '"You\'re the best"'];
-const MAIL_WARM = ['"Thanks, received!"', '"Thanks! Will do."', '"Much appreciated."'];
+/** Friendly replies, grouped by what the message is actually doing. First match wins. */
+const REPLY_GROUPS: { test: RegExp; chat: string[]; mail?: string[]; life?: string[] }[] = [
+  // Introductions
+  { test: /welcome|heard you're|nice to meet|first day|new here|I'm the|, (CTO|COO|CEO)\b|joins as/i,
+    chat: ['"Nice to meet you! 👋"', '"Looking forward to it 🙂"', '"Can\'t wait to find out 😅"'], mail: ['"Lovely to meet you."', '"Thanks for the welcome!"'] },
+  // They're asking you for something (often a to-do already)
+  { test: /\b(can you|could you|would you|please|need (you|a|the|someone)|coffee|book|send|get me)\b|\?\s*$/i,
+    chat: ['"On it 👍"', '"Leave it with me"', '"Coming right up"', '"Consider it done"'], mail: ['"On it."', '"Will do, thanks."'], life: ['"On it ❤️"', '"Leave it with me"'] },
+  // Thanks / praise
+  { test: /\b(thank|thanks|appreciate|grateful|you're the best|nice work|great job|killing it)\b/i,
+    chat: ['"Anytime!"', '"Of course 🙂"', '"Happy to help!"'], mail: ['"My pleasure."', '"Anytime."'], life: ['"Love you ❤️"', '"Anytime 🥰"'] },
+  // Something went wrong, or someone is struggling
+  { test: /\b(sorry|ugh|down|broke|broken|fire|late|stuck|can't sleep|stress|panic|cancel|failed|worried|upset)\b|😬|🔥|😭|🫠|😩/i,
+    chat: ['"Oh no. Here if you need anything"', '"Hang in there 💪"', '"We\'ll sort it"'], mail: ['"Sorry to hear that. How can I help?"', '"Understood. I\'ll keep an eye on it."'], life: ['"Oh no ❤️ call you later?"', '"Sending a hug"'] },
+  // Good news
+  { test: /\b(paid|shipped|won|signed|offer|great news|yay|love|perfect|amazing|finally|found|got it|we did it)\b|!!|🎉|🙌|❤️|🥳|💸|🚀/i,
+    chat: ['"Amazing! 🎉"', '"Love that"', '"Huge!"'], mail: ['"Great news, thank you!"', '"Wonderful."'], life: ['"Yay!! ❤️"', '"I love that"'] },
+  // Jokes and nonsense
+  { test: /\b(lol|lmao|jk|haha|pigeon|cake|hat|fern|mug|dog|cat)\b|😂|🙃|💅/i,
+    chat: ['"Ha! 😂"', '"Stop it 😂"', '"Iconic"'], life: ['"😂😂"', '"Stop it"'] },
+  // Everything else: information
+  { test: /./,
+    chat: ['"Thanks for the heads-up 🙂"', '"Noted 👍"', '"Good to know"'], mail: ['"Thanks, received."', '"Noted, thank you."'], life: ['"Noted ❤️"', '"Good to know x"'] },
+];
+
 /** Who a message is from, if it's someone you can get to know. */
 export const replyKey = (m: Message) => (m.from.startsWith('Your ') || m.from.startsWith('Accounts') ? null : peopleIn([m.from])[0] ?? null);
 /** Two friendly things to say back to a message that didn't ask for anything. */
@@ -1076,8 +1098,9 @@ export function friendlyReplies(m: Message): string[] {
   // Only the latest message from them in this app gets a reply.
   const last = S.messages.filter((x) => x.app === m.app && x.from === m.from).pop();
   if (last !== m) return [];
-  if (HELLO.test(m.body)) return ['"Nice to meet you! 👋"', '"Looking forward to it 🙂"'];
-  const pool = m.app === 'mail' ? MAIL_WARM : WARM;
+  const g = REPLY_GROUPS.find((x) => x.test.test(m.body))!;
+  const life = PERSONAL.includes(replyKey(m) ?? '');
+  const pool = (m.app === 'mail' ? g.mail : life ? g.life : null) ?? g.chat;
   let h = 0;
   for (const ch of m.id) h = (h * 31 + ch.charCodeAt(0)) % 997;
   return [pool[h % pool.length], pool[(h + 1) % pool.length]];

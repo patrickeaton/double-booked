@@ -182,7 +182,9 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .off-hours { position: absolute; left: 0; right: 0; background: repeating-linear-gradient(135deg, #f3f0e9 0 6px, #ebe7de 6px 12px); pointer-events: none; }
 .past { position: absolute; left: 0; right: 0; background: rgba(20, 24, 43, 0.045); pointer-events: none; }
 .now-line { position: absolute; left: -4px; right: 0; height: 2px; background: var(--accent); z-index: 5; pointer-events: none; }
-.now-line::before { content: ''; position: absolute; left: -3px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.now-line::before { content: ''; position: absolute; left: -3px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); display: none; }
+/* One dot, on the leftmost calendar only */
+.now-line.first::before { display: block; }
 
 .evt {
   position: absolute; left: 3px; right: 3px; border-radius: 8px; padding: 3px 6px; overflow: hidden;
