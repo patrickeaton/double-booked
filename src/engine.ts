@@ -210,7 +210,6 @@ export function setupDay(i: number) {
   S.banners = [];
   S.toasts = [];
   S.paused = false;
-  S.pauses = 0;
   addMessage({ app: hasApp('mail') ? 'mail' : 'huddle', ...d.memo }, true);
   S.app = 'calendar';
   dirty();
@@ -235,6 +234,13 @@ export function startDay() {
 
 const MS_PER_MIN = 333; // 9am–6pm in ~3 real minutes (weekends run twice as fast)
 const STEP = 5; // game minutes per tick
+/** When the clock last moved, and how long (real ms) until it moves again: lets the now-line glide between ticks. */
+let tickAt = 0;
+let tickMs = 0;
+export function clockGlide(): { since: number; ms: number; minutes: number } | null {
+  if (S.phase !== 'day' || S.paused || !tickMs) return null;
+  return { since: performance.now() - tickAt, ms: tickMs, minutes: STEP };
+}
 let acc = 0;
 let last = 0;
 let running = false;
@@ -263,7 +269,9 @@ function loop(ts: number): boolean {
     while (acc >= perMin * STEP && S.phase === 'day') {
       acc -= perMin * STEP;
       for (let k = 0; k < STEP && S.phase === 'day'; k++) advance();
+      tickAt = ts;
     }
+    tickMs = (perMin * STEP) / S.speed;
   }
   return true;
 }
@@ -275,19 +283,11 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-/** Stress for the next pause today: the first is free, then it climbs. */
-export const pauseCost = (n = S.pauses + 1) => [0, 0, 3, 6, 10, 15][n] ?? 20;
-
-export function togglePause() {
-  if (S.paused) {
-    S.paused = false; // resuming is always free
-    return dirty();
-  }
-  S.pauses++;
-  const cost = pauseCost(S.pauses);
-  S.paused = true;
-  if (cost) applyEffects({ stress: cost }, `Paused again (${S.pauses}× today). Everyone is still waiting.`);
-  banner('calendar', S.pauses === 1 ? '⏸ Paused' : '⏸ Paused again', S.pauses === 1 ? 'Your one free pause today. The next one costs stress.' : `+${cost} stress. Next pause: +${pauseCost()}.`);
+/** There's no pausing a workday. The game only stops if you leave the app; this picks it back up. */
+export function resume() {
+  S.paused = false;
+  last = performance.now();
+  tickAt = last;
   dirty();
 }
 

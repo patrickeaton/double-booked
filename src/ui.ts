@@ -3,8 +3,8 @@ import { STEP_LABEL, drinkEmoji, drinkName, drinkPrice, optionsFor, specString, 
 import { CAL_END, CAL_START, DAY_END, DAY_START, EXECS, isBoss, PAYROLL, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, TABLE_TIMES, fmt } from './data';
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
-  minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
-  toggleSpeed, scheduleAllTickets, bookAllRequests, pauseCost, unschedule, whereOf, atOffice, placeLabel, padBefore, padAfter, canBuffer, setBuffer, scheduleTicket, ticketBlock, toggleAttendee, canEditAttendees, skippedFrom, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
+  minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, resume, clockGlide,
+  toggleSpeed, scheduleAllTickets, bookAllRequests, unschedule, whereOf, atOffice, placeLabel, padBefore, padAfter, canBuffer, setBuffer, scheduleTicket, ticketBlock, toggleAttendee, canEditAttendees, skippedFrom, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
 } from './engine';
 import { avatarEl } from './avatars';
 import { coffeeOf, metPeople, statusOf } from './people';
@@ -52,7 +52,7 @@ split.addEventListener('change', () => dirty());
 // ───────────────────────────── skeleton ─────────────────────────────
 let refs: {
   device: HTMLElement; status: HTMLElement; meters: HTMLElement; main: HTMLElement; dock: HTMLElement;
-  banners: HTMLElement; toasts: HTMLElement; overlay: HTMLElement;
+  banners: HTMLElement; toasts: HTMLElement; overlay: HTMLElement; waiting: HTMLElement;
 };
 
 export function mountUI(root: HTMLElement) {
@@ -66,8 +66,9 @@ export function mountUI(root: HTMLElement) {
     banners: h('div', { class: 'banners' }),
     toasts: h('div', { class: 'toasts' }),
     overlay: h('div', { class: 'overlay' }),
+    waiting: h('div', { class: 'waiting-wrap' }),
   };
-  device.append(refs.status, refs.meters, refs.main, refs.dock, refs.banners, refs.toasts, refs.overlay);
+  device.append(refs.status, refs.meters, refs.main, refs.dock, refs.banners, refs.toasts, refs.waiting, refs.overlay);
   root.append(device);
   setRenderer(render);
   setInterval(() => {
@@ -175,9 +176,14 @@ function render() {
   }
 
   refs.dock.replaceChildren(...renderDock(isSplit));
+  keepScroll(refs.waiting, () => refs.waiting.replaceChildren(...renderWaiting()));
 
   const now = performance.now();
-  S.banners = S.banners.filter((b) => now - b.born < (b.ttl ?? 4500));
+  S.banners = S.banners.filter((b) => now - b.born < (b.ttl ?? 4500)
+    // Already answered (here, in the thread, or in Waiting on you)? Then the notification has done its job.
+    && !(b.msgId && S.messages.find((m) => m.id === b.msgId)?.chosen !== undefined)
+    // The Waiting on you panel already lists every message notification.
+    && !(waitingOpen && b.msgId));
   S.toasts = S.toasts.filter((t) => now - t.born < 1800);
   refs.banners.replaceChildren(
     ...[...S.banners.filter((b) => b.action).slice(-1), ...S.banners.filter((b) => !b.action).slice(S.banners.some((b) => b.action) ? -1 : -2)].map((b) =>
@@ -231,7 +237,7 @@ function dayLabel(short = false) {
 
 function renderStatus() {
   const time = S.phase === 'prep' || S.phase === 'memo' ? fmt(S.now) : S.phase === 'day' ? fmt(S.now) : '—';
-  const label = S.phase === 'prep' ? '' : S.phase === 'day' ? (S.paused ? 'Paused' : day().weekend ? 'Weekend 🌴' : 'Workday') : '';
+  const label = S.phase === 'prep' ? '' : S.phase === 'day' ? (S.paused ? 'Paused while you were away' : day().weekend ? 'Weekend 🌴' : 'Workday') : '';
   return h('div', { class: 'status-inner' },
     h('span', { class: 'status-left' }, label),
     h('span', { class: 'status-center' }, h('b', {}, `${dateFor(S.dayIndex)} · ${time}`), h('small', {}, S.dayIndex < DAYS.length ? `Day ${S.dayIndex + 1} of ${DAYS.length}` : `Endless · Day ${S.dayIndex + 1}`)),
@@ -240,9 +246,9 @@ function renderStatus() {
         const n = S.events.filter((e) => e.status === 'pending').length;
         return h('button', { class: 'start-btn', onclick: startDay, title: n ? `${n} requests still unbooked` : 'Start the day' }, 'Start day', n > 0 && h('span', { class: 'start-count' }, n), ' →');
       })(),
-      S.phase === 'day' && h('button', { class: 'chip-btn', onclick: toggleSpeed, title: 'Speed' }, `${S.speed}×`),
-      S.phase === 'day' && h('button', { class: `chip-btn ${!S.paused && pauseCost() ? 'costly' : ''}`, onclick: togglePause, title: S.paused ? 'Resume' : pauseCost() ? `Pause (+${pauseCost()} stress)` : 'Pause (free once a day)' },
-        S.paused ? '▶' : '⏸', !S.paused && h('small', { class: 'pause-cost' }, pauseCost() ? `+${pauseCost()}😰` : 'free')),
+      waitingPill(),
+      S.phase === 'day' && !S.paused && h('button', { class: 'chip-btn', onclick: toggleSpeed, title: 'Speed' }, `${S.speed}×`),
+      S.phase === 'day' && S.paused && h('button', { class: 'chip-btn resume', onclick: resume, title: 'The day paused while you were away' }, '▶ Resume'),
     ),
   );
 }
@@ -551,7 +557,7 @@ function renderCalendar() {
     col.append(h('div', { class: 'off-hours', style: `top:0;height:${(t9() - CAL_START) * PX}px` }));
     col.append(h('div', { class: 'off-hours', style: `top:${(DAY_END - CAL_START) * PX}px;height:${(CAL_END - DAY_END) * PX}px` }));
     if (S.phase === 'day' && today) {
-      col.append(h('div', { class: 'past', style: `top:0;height:${(S.now - CAL_START) * PX}px` }));
+      col.append(h('div', { class: 'past glide-h', style: `top:0;height:${(S.now - CAL_START) * PX}px;${glideStyle()}` }));
     }
     const shown = eventsOn(viewDay).filter((e) => e.start !== null && e.attendees.includes(x) && e.status !== 'declined' && e.status !== 'bumped');
     const lanes = layoutLanes(shown.filter((e) => e.kind !== 'focus'));
@@ -573,7 +579,7 @@ function renderCalendar() {
         col.append(el);
       }
     }
-    if (S.phase === 'day' && today) col.append(h('div', { class: 'now-line', style: `top:${(S.now - CAL_START) * PX}px` }));
+    if (S.phase === 'day' && today) col.append(h('div', { class: 'now-line glide', style: `top:${(S.now - CAL_START) * PX}px;${glideStyle()}` }));
     col.addEventListener('click', (ev) => {
       if ((ev.target as HTMLElement).closest('.evt') || !S.selected || Date.now() < suppressUntil) return;
       placeEvent(S.selected, minuteAt(col, (ev as MouseEvent).clientY), false, viewDay);
@@ -826,7 +832,7 @@ let drawerOpen = false;
 let sideKey = '';
 let sideBorn = 0;
 function sideDelay() {
-  const key = drawerOpen ? 'req' : detailOpen ? `d:${S.selected}` : '';
+  const key = waitingOpen ? 'wait' : drawerOpen ? 'req' : detailOpen ? `d:${S.selected}` : '';
   if (key !== sideKey) { sideKey = key; sideBorn = performance.now(); }
   return `animation-delay:${sideBorn - performance.now()}ms`;
 }
@@ -1043,6 +1049,55 @@ function renderMail() {
 // ── Chat apps (Messages, Huddle): conversations grouped by person ──
 /** "Bev (People Ops)", "Voicemail · Mum" and "Gerald Pemberton" thread as Bev, Mum and Gerald. */
 /** Jump straight to a message: its mail, or its chat thread. */
+/** The now-line slides from this tick's time to the next one, so it moves smoothly instead of jumping. */
+function glideStyle() {
+  const g = clockGlide();
+  if (!g) return 'animation:none;';
+  return `--glide:${g.minutes * PX}px;--h0:${(S.now - CAL_START) * PX}px;animation-duration:${Math.round(g.ms)}ms;animation-delay:${-Math.round(Math.min(g.since, g.ms))}ms;`;
+}
+
+// ───── Waiting on you: every unanswered message in one place ─────
+let waitingOpen = false;
+const waitingList = () => S.messages
+  .filter((m) => m.choices && m.chosen === undefined && (m.day ?? S.dayIndex) === S.dayIndex)
+  .sort((a, b) => (a.expires ?? 1e9) - (b.expires ?? 1e9));
+
+function waitingPill() {
+  if (S.phase !== 'day' && S.phase !== 'prep') return null;
+  const list = waitingList();
+  if (!list.length) return null;
+  const urgent = list.some((m) => m.expires !== undefined && m.expires - S.now <= 10);
+  return h('button', { class: `waiting-pill ${urgent ? 'urgent' : ''}`, style: urgent ? pulsePhase() : '', onclick: () => { waitingOpen = !waitingOpen; dirty(); }, title: 'Waiting on your reply' },
+    '💬 ', h('b', {}, list.length), h('span', { class: 'waiting-word' }, ' to answer'));
+}
+
+function renderWaiting() {
+  const list = waitingList();
+  if (!waitingOpen || !list.length) { waitingOpen = false; return []; }
+  const close = () => { waitingOpen = false; dirty(); };
+  const appIcon = (app: AppId) => h('span', { class: 'banner-icon', style: `background:${appOf(app).color}` }, appOf(app).icon);
+  return [
+    h('div', { class: 'waiting-backdrop', onclick: close }),
+    h('aside', { class: 'waiting', style: sideDelay() },
+      h('div', { class: 'drawer-head' }, h('b', {}, 'Waiting on you'), h('span', { class: 'count' }, list.length),
+        h('button', { class: 'win-btn', onclick: close }, '✕')),
+      h('div', { class: 'waiting-list', 'data-keep': 'waiting' },
+        ...list.map((m) => {
+          const left = m.expires !== undefined ? m.expires - S.now : null;
+          return h('div', { class: `wait-item ${left !== null && left <= 10 ? 'urgent' : ''}` },
+            h('div', { class: 'wait-top' }, appIcon(m.app),
+              h('span', { class: 'wait-from' }, h('b', {}, m.from.replace(/^Voicemail · /, '')), m.subject ? h('small', {}, m.subject) : null),
+              h('span', { class: `wait-left ${left !== null && left <= 10 ? 'bad' : ''}` }, left === null ? 'no rush' : left <= 0 ? 'now' : `${left}m left`)),
+            h('p', { class: 'wait-body' }, m.followUp ? '↩︎ ' : '', m.body),
+            h('div', { class: 'wait-choices' },
+              ...m.choices!.map((c, i) => h('button', { class: 'wait-choice', onclick: () => choose(m.id, i) }, c.label)),
+              h('button', { class: 'wait-open', onclick: () => { waitingOpen = false; openMessage(m.id); } }, 'Open thread ›')),
+          );
+        })),
+    ),
+  ];
+}
+
 function openMessage(id: string) {
   const m = S.messages.find((x) => x.id === id);
   if (!m) return;
