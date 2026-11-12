@@ -171,6 +171,15 @@ function advance() {
   for (const e of S.events) {
     if (e.status === 'scheduled' && e.start !== null && !e.departed && travelOf(e) && occStart(e) <= now && e.start > now) depart(e);
   }
+  for (const e of S.events) {
+    if (e.withRide && e.remote && e.travel && e.start !== null && ['scheduled', 'running'].includes(e.status) && now >= e.start - e.travel) {
+      e.withRide = false;
+      S.meters.runway -= RIDE_COST;
+      spend(`Ryde · no-show fee (${e.title})`, RIDE_COST);
+      applyEffects({ stress: 4 }, `A Ryde driver waited outside for ${e.title}. It was remote. You were charged anyway.`);
+      banner('ryde', '🚕 Driver waiting…', `Nobody came out. ${e.title} is remote. $${RIDE_COST} no-show fee.`);
+    }
+  }
   for (const e of [...S.events].sort((a, b) => Number(!!b.force) - Number(!!a.force))) {
     if (e.status === 'scheduled' && e.start !== null && e.start <= now) startEvent(e);
   }
@@ -242,6 +251,26 @@ function fire(s: Script) {
       if (ev && ev.status === 'scheduled') {
         ev.start = s.start;
         if (s.duration) ev.duration = s.duration;
+      }
+      if (s.msg) addMessage(s.msg);
+      break;
+    }
+    case 'change': {
+      const ev = findEvent(s.id);
+      if (ev && (ev.status === 'scheduled' || ev.status === 'pending') && !ev.departed) {
+        if (s.place !== undefined) ev.place = s.place;
+        if (s.travel !== undefined) ev.travel = s.travel;
+        if (s.remote !== undefined) {
+          ev.remote = s.remote;
+          if (s.remote && !ev.remoteOk) ev.remoteOk = 'fine';
+        }
+        if (s.mustBeInPerson) {
+          ev.remote = false;
+          ev.remoteOk = undefined;
+        }
+        ev.fresh = true;
+        const what = s.remote ? 'now remote 💻' : s.remote === false || s.mustBeInPerson ? `now in person 🚗 (${ev.travel}m each way)` : `moved to ${ev.place}`;
+        banner('calendar', '📍 Meeting changed', `${ev.title}: ${what}`);
       }
       if (s.msg) addMessage(s.msg);
       break;
@@ -554,7 +583,11 @@ export function issuesFor(e: CalEvent): Issue[] {
   }
   if (e.catering === 'wanted') out.push({ icon: '🍱', text: e.withCatering ? 'Catered' : 'Wants catering', bad: !e.withCatering });
   if (travelOf(e)) out.push({ icon: '🚗', text: `${e.travel}m each way`, bad: false });
-  if (travelOf(e) && hasApp('ryde')) out.push({ icon: '🚕', text: e.withRide ? 'Ride booked' : 'Needs a ride', bad: !e.withRide });
+  if (travelOf(e) && hasApp('ryde')) {
+    if (rideStale(e)) out.push({ icon: '🚕', text: `Ride is going to ${e.rideTo}, not ${e.place}`, bad: true });
+    else out.push({ icon: '🚕', text: e.withRide ? 'Ride booked' : 'Needs a ride', bad: !e.withRide });
+  }
+  if (rideUnneeded(e)) out.push({ icon: '🚕', text: "Ride still booked, but it's remote now", bad: true });
   if (e.remote) out.push({ icon: '💻', text: e.remoteOk === 'meh' ? 'Remote (half the upside)' : 'Remote', bad: false });
   return out;
 }
@@ -626,9 +659,17 @@ function depart(e: CalEvent) {
   e.departed = true;
   if (hasApp('ryde') && !e.withRide) {
     applyEffects({ standing: -3, stress: 4 }, `No ride booked for ${e.title}. ${execNames(e.attendees)} hailed a cab and arrived flustered.`);
+  } else if (rideStale(e)) {
+    applyEffects({ standing: -5, stress: 6 }, `The Ryde took ${execNames(e.attendees)} to ${e.rideTo}. The meeting was at ${e.place}. Arrived late and furious.`);
+    banner('ryde', '🚕 Wrong address!', `${execNames(e.attendees)} got dropped at ${e.rideTo}.`);
   }
   banner('calendar', '🚗 Heading out', `${execNames(e.attendees)} leaving for ${e.title}${e.place ? ` at ${e.place}` : ''}.`);
 }
+
+/** A ride was booked, but the venue changed afterwards. */
+export const rideStale = (e: CalEvent) => !!e.withRide && !e.remote && !!e.travel && e.rideTo !== e.place;
+/** A ride is still booked for a meeting that went remote. */
+export const rideUnneeded = (e: CalEvent) => !!e.withRide && !!e.remote;
 
 export const addonCost = (e: CalEvent) => ({ coffee: COFFEE_ADDON * e.attendees.length, catering: CATERING_COST });
 
@@ -657,7 +698,13 @@ export function toggleAddon(id: string, which: 'coffee' | 'catering' | 'remote' 
   if (which === 'coffee') e.withCoffee = !e.withCoffee;
   if (which === 'catering') e.withCatering = !e.withCatering;
   if (which === 'remote' && e.remoteOk && !e.departed) e.remote = !e.remote;
-  if (which === 'ride' && e.travel) e.withRide = !e.withRide;
+  if (which === 'ride' && e.travel) {
+    if (rideStale(e)) e.rideTo = e.place; // re-point it at the new address
+    else {
+      e.withRide = !e.withRide;
+      e.rideTo = e.withRide ? e.place : undefined;
+    }
+  }
   dirty();
 }
 

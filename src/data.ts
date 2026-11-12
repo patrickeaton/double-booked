@@ -326,6 +326,16 @@ export const DAYS: DayDef[] = [
         reward: { standing: 3 }, missPenalty: { standing: -5 }, declinePenalty: { standing: -4 },
       },
       {
+        id: 'd3-soil', proposed: t('12:30'), title: 'Supplier call · SoilSense', remote: true, remoteOk: 'fine', travel: 15, place: 'SoilSense warehouse', bumpPenalty: { morale: -2 }, attendees: ['theo'], start: null, duration: 30, window: [t('12:00'), t('13:00')],
+        reward: { morale: 3 }, missPenalty: { morale: -4 }, declinePenalty: { morale: -3 },
+        note: 'Video call. Probably.',
+      },
+      {
+        id: 'd3-shoot', proposed: t('16:00'), title: 'Photo shoot · Bloom Magazine 📸', noBump: true, travel: 20, place: 'Bloom studio, Shoreditch', attendees: ['margo'], start: null, duration: 30, window: [t('15:30'), t('16:30')],
+        reward: { standing: 4 }, missPenalty: { standing: -5 }, declinePenalty: { standing: -5 },
+        note: '"30 Under 30-ish". Margo has been practising her thoughtful-lean pose.',
+      },
+      {
         id: 'd3-mlunch', proposed: t('12:00'), title: "Margo's lunch 🥗", minOk: 30, attendees: ['margo'], start: null, duration: 45, kind: 'personal', window: [t('12:00'), t('14:00')],
         reward: { morale: 2 }, missPenalty: { morale: -6, standing: -3 }, declinePenalty: { morale: -6 },
       },
@@ -385,6 +395,10 @@ export const DAYS: DayDef[] = [
         msg: { app: 'huddle', from: 'Margo', body: "put a quick sync w/ theo at 2 ✌️ don't move it" },
       },
       {
+        at: t('13:50'), type: 'change', id: 'd3-dinnerprep', place: 'The Linden Hotel', travel: 25,
+        msg: { app: 'huddle', from: 'Margo', body: "dinner prep is at kestrel's HOTEL now (the linden). they want to \"see us in our element\" 🙃 it's further btw" },
+      },
+      {
         at: t('13:35'), type: 'call',
         call: {
           from: 'Theo',
@@ -397,6 +411,10 @@ export const DAYS: DayDef[] = [
           missed: { morale: -4 },
           missedLog: 'You let Theo go to voicemail. He left a 4-minute silence.',
         },
+      },
+      {
+        at: t('15:05'), type: 'change', id: 'd3-shoot', remote: true,
+        msg: { app: 'huddle', from: 'Margo', body: "photographer's van broke down 😩 they're doing the shoot over VIDEO?? is that a thing?? anyway no need to go to shoreditch" },
       },
       {
         at: t('15:00'), type: 'task',
@@ -414,6 +432,10 @@ export const DAYS: DayDef[] = [
             { label: 'Ask Wren to cover notes', effects: { morale: -6, standing: -3 }, log: 'Wren covered. Wren will remember this.' },
           ],
         },
+      },
+      {
+        at: t('11:20'), type: 'change', id: 'd3-soil', mustBeInPerson: true,
+        msg: { app: 'huddle', from: 'Theo', body: 'SoilSense wants me there in person. "the samples don\'t translate over zoom". It\'s dirt. It\'s literally dirt.' },
       },
       {
         at: t('11:50'), type: 'task',

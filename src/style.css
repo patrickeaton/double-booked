@@ -370,3 +370,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
   .dock-app:first-child { margin-left: auto; }
   .dock-app:last-child { margin-right: auto; }
 }
+
+.chip.warn { background: #ff6b5b; color: #fff; animation: pulse-warn 1.2s ease-in-out infinite; }
+.btn.warn { background: #ff6b5b; color: #fff; }
+@keyframes pulse-warn { 50% { opacity: 0.7; } }

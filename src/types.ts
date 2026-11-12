@@ -62,6 +62,8 @@ export interface CalEvent {
   withCoffee?: boolean;
   withCatering?: boolean;
   withRide?: boolean;
+  /** Where the booked ride is headed (rides don't follow venue changes on their own). */
+  rideTo?: string;
   departed?: boolean;
   /** For requests arriving mid-day: must be scheduled to START before this. */
   deadline?: number;
@@ -152,6 +154,8 @@ export type Script = { at: number; after?: number } & (
   | { type: 'request'; event: EventDef; msg?: MsgDef }
   | { type: 'insert'; event: EventDef; msg?: MsgDef }
   | { type: 'move'; id: string; start: number; duration?: number; msg?: MsgDef }
+  /** Someone changes the venue, or flips a meeting between remote and in person. */
+  | { type: 'change'; id: string; place?: string; travel?: number; remote?: boolean; mustBeInPerson?: boolean; msg?: MsgDef }
   | { type: 'task'; task: TaskDef; msg?: MsgDef }
   | { type: 'call'; call: CallDef }
   | { type: 'reveal'; flag: string }

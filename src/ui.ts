@@ -1,7 +1,7 @@
 import { CAL_END, CAL_START, DAYS, DAY_END, DRINKS, EXECS, PAYROLL, PRODUCTS, RESTAURANTS, RIDE_COST, RULES, TABLE_TIMES, fmt } from './data';
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
-  minStart, newGame, nextDay, hasApp, isNewApp, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
+  minStart, newGame, nextDay, hasApp, isNewApp, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
   toggleSpeed, unschedule,
 } from './engine';
 import { METER_LABEL, S, dirty, fmtEffect, fmtMoney, isGood, readSave, setRenderer } from './state';
@@ -380,7 +380,8 @@ function renderSelection(e: CalEvent) {
         `☕ Coffee $${addonCost(e).coffee}`,
         e.coffee && h('small', {}, S.flags.includes(`drink-${e.attendees[0]}`) ? ' · their usual' : ' · house latte?')),
       e.catering && h('button', { class: `chip ${e.withCatering ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'catering') }, `🍱 Catering $${addonCost(e).catering}`),
-      e.travel && !e.remote && hasApp('ryde') && h('button', { class: `chip ${e.withRide ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'ride') }, `🚕 Ride $${RIDE_COST * 2}`),
+      e.travel && hasApp('ryde') && (!e.remote || e.withRide) && h('button', { class: `chip ${rideStale(e) || rideUnneeded(e) ? 'warn' : e.withRide ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'ride') },
+        rideUnneeded(e) ? '🚕 Cancel ride (remote now)' : rideStale(e) ? `🚕 Fix ride → ${e.place}` : `🚕 Ride $${RIDE_COST * 2}`),
       e.remoteOk && h('button', { class: `chip ${e.remote ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'remote') },
         e.remote ? '💻 Remote' : `🚗 In person · ${e.travel}m each way`,
         e.remote && e.remoteOk === 'meh' ? h('small', {}, ' · less impact') : null),
@@ -673,15 +674,17 @@ function renderNotes() {
 }
 
 function renderRyde() {
-  const trips = S.events.filter((e) => e.travel && e.start !== null && ['scheduled', 'running', 'done'].includes(e.status)).sort((a, b) => a.start! - b.start!);
+  const trips = S.events.filter((e) => e.travel && e.start !== null && ['scheduled', 'running', 'done'].includes(e.status) && (!e.remote || e.withRide)).sort((a, b) => a.start! - b.start!);
   return h('div', { class: 'app ryde' },
     head('Ryde', 'Cars for off-site meetings'),
     h('div', { class: 'scroll', 'data-keep': 'ryde' },
       h('div', { class: 'ryde-map' }, '🗺️ 🚕 · · · · 📍'),
       trips.length === 0 ? h('p', { class: 'empty' }, 'No off-site meetings booked today.') : null,
       ...trips.map((e) => h('div', { class: 'order-row' },
-        h('span', {}, h('b', {}, e.title), h('div', { class: 'small muted' }, `${e.place ?? 'Off-site'} · leave ${fmt(e.start! - (e.travel ?? 0))}${e.remote ? ' · remote now' : ''}`)),
-        e.remote ? h('span', { class: 'small muted' }, '💻 no ride needed')
+        h('span', {}, h('b', {}, e.title), h('div', { class: 'small muted' }, `${e.place ?? 'Off-site'} · leave ${fmt(e.start! - (e.travel ?? 0))}${e.remote ? ' · remote now' : ''}${rideStale(e) ? ` · ⚠️ ride booked to ${e.rideTo}` : ''}`)),
+        rideUnneeded(e) && e.status === 'scheduled' ? h('button', { class: 'btn warn', onclick: () => toggleAddon(e.id, 'ride') }, 'Cancel (remote now)')
+          : e.remote ? h('span', { class: 'small muted' }, '💻 no ride needed')
+          : rideStale(e) && e.status === 'scheduled' && !e.departed ? h('button', { class: 'btn warn', onclick: () => toggleAddon(e.id, 'ride') }, 'Update address')
           : e.departed || e.status !== 'scheduled' ? h('span', { class: 'small muted' }, e.withRide ? '✓ rode' : 'took a cab')
           : h('button', { class: `btn ${e.withRide ? '' : 'primary'}`, onclick: () => toggleAddon(e.id, 'ride') }, e.withRide ? '✓ Booked' : `Book $${RIDE_COST * 2}`)))),
   );
