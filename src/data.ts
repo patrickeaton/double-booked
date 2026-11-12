@@ -186,13 +186,13 @@ export const DAYS: DayDef[] = [
   // ───────────────────────────── DAY 2 ─────────────────────────────
   {
     title: 'Two Bosses',
-    apps: ['mail', 'messages', 'bundl', 'card'],
+    apps: ['mail', 'messages', 'bundl', 'card', 'presto'],
     subtitle: 'Theo has entered the chat.',
     memo: {
       from: 'Bev (People Ops)',
       subject: 'New policy + new boss',
       body:
-        "Two things!\n\n1. Margo read a book on productivity. Effective today: no meeting may run longer than 60 minutes.\n\n2. You're now also managing Theo (CTO). His 1–5pm focus block is non-negotiable. Last EA who touched it now works at a llama farm. (Happily, we hear.)\n\n3. IT finally set up your Mail, Messages, Bundl (shopping) and the company Card. Use them wisely.",
+        "Two things!\n\n1. Margo read a book on productivity. Effective today: no meeting may run longer than 60 minutes.\n\n2. You're now also managing Theo (CTO). His 1–5pm focus block is non-negotiable. Last EA who touched it now works at a llama farm. (Happily, we hear.)\n\n3. IT finally set up your Mail, Messages, Bundl (shopping) and the company Card. Use them wisely.\n\n4. Also Presto ⚡: save one-tap shortcuts (Theo's coffee, a go-to gift…) during morning prep. When the request lands, you just tap.",
     },
     execs: ['margo', 'theo'],
     rules: ['margoMorning', 'theoFocus', 'max60'],

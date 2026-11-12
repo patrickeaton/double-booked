@@ -1,7 +1,7 @@
 export type ExecId = 'margo' | 'theo';
 export type Meter = 'standing' | 'runway' | 'morale' | 'stress';
 export type Effects = Partial<Record<Meter, number>>;
-export type AppId = 'calendar' | 'mail' | 'huddle' | 'messages' | 'brew' | 'bundl' | 'card' | 'notes' | 'ryde' | 'tably';
+export type AppId = 'calendar' | 'mail' | 'huddle' | 'messages' | 'brew' | 'bundl' | 'card' | 'notes' | 'ryde' | 'tably' | 'presto';
 export type InboxApp = 'mail' | 'huddle' | 'messages';
 
 export interface Exec {
@@ -202,6 +202,12 @@ export interface Product {
   desc: string;
   tier: 'cheap' | 'good' | 'lavish';
 }
+
+export type Shortcut = { id?: string } & (
+  | { kind: 'coffee'; drink: string; to: ExecId }
+  | { kind: 'gift'; product: string; pay: 'company' | 'me' }
+  | { kind: 'rides' }
+);
 
 export interface Restaurant {
   id: string;

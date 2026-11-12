@@ -1,8 +1,9 @@
-import type { AppId, CalEvent, CallState, Effects, LogEntry, Message, Meter, Order, Script, Task } from './types';
+import type { AppId, CalEvent, CallState, Effects, LogEntry, Message, Meter, Order, Script, Shortcut, Task } from './types';
 
 export type Phase = 'title' | 'memo' | 'prep' | 'day' | 'review' | 'over' | 'end';
 
-export interface Banner { id: number; app: AppId; title: string; body: string; born: number }
+export interface BannerAction { label: string; run: () => void }
+export interface Banner { id: number; app: AppId; title: string; body: string; born: number; action?: BannerAction; ttl?: number }
 export interface Toast { id: number; text: string; good: boolean; born: number }
 export interface Sheet { productId: string; to: string | null; pay: 'company' | 'me' }
 
@@ -41,6 +42,8 @@ export interface GameState {
   paused: boolean;
   speed: number;
   banners: Banner[];
+  /** Presto shortcuts (kept between days). */
+  shortcuts: Shortcut[];
   toasts: Toast[];
   sheet: Sheet | null;
   review: Review | null;
@@ -75,6 +78,7 @@ export const S: GameState = {
   paused: false,
   speed: 1,
   banners: [],
+  shortcuts: [],
   toasts: [],
   sheet: null,
   review: null,
@@ -128,9 +132,10 @@ export function applyEffects(eff: Effects | undefined, text: string, quiet = fal
   dirty();
 }
 
-export function banner(app: AppId, title: string, body: string) {
-  S.banners.push({ id: uid(), app, title, body, born: performance.now() });
-  if (S.banners.length > 3) S.banners.shift();
+export function banner(app: AppId, title: string, body: string, action?: BannerAction, ttl?: number) {
+  S.banners.push({ id: uid(), app, title, body, born: performance.now(), action, ttl });
+  while (S.banners.filter((b) => !b.action).length > 3) S.banners.splice(S.banners.findIndex((b) => !b.action), 1);
+  while (S.banners.filter((b) => b.action).length > 2) S.banners.splice(S.banners.findIndex((b) => b.action), 1);
   dirty();
 }
 
@@ -142,11 +147,11 @@ export function addStrike(note: string) {
 
 // ───────────── save / load ─────────────
 const KEY = 'double-booked-save-v1';
-export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[] }
+export interface Save { dayIndex: number; meters: Record<Meter, number>; strikes: number; strikeNotes: string[]; flags: string[]; incoming?: CalEvent[]; shortcuts?: Shortcut[] }
 
 export function writeSave() {
   try {
-    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming };
+    const s: Save = { dayIndex: S.dayIndex, meters: { ...S.meters }, strikes: S.strikes, strikeNotes: [...S.strikeNotes], flags: [...S.flags], incoming: S.incoming, shortcuts: S.shortcuts };
     localStorage.setItem(KEY, JSON.stringify(s));
   } catch {
     /* storage may be unavailable */

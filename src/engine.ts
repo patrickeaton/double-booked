@@ -2,6 +2,7 @@ import { CAL_START, DAYS, DAY_END, DAY_START, DRINKS, EXECS, PAYROLL, PREP_TIME,
 import {
   S, START_METERS, addStrike, applyEffects, banner, dirty, fmtMoney, readSave, uid, writeSave, clearSave,
 } from './state';
+import { offerShortcut } from './shortcuts';
 import type { AppId, CalEvent, Effects, ExecId, Message, MsgDef, Script } from './types';
 
 export const day = () => DAYS[S.dayIndex];
@@ -40,6 +41,7 @@ export function newGame() {
   S.ledger = [];
   S.incoming = [];
   S.carry = [];
+  S.shortcuts = [];
   setupDay(0);
 }
 
@@ -52,6 +54,7 @@ export function continueGame() {
   S.flags = [...save.flags];
   S.ledger = [];
   S.incoming = save.incoming ?? [];
+  S.shortcuts = save.shortcuts ?? [];
   S.carry = [];
   setupDay(save.dayIndex);
 }
@@ -237,6 +240,7 @@ function fire(s: Script) {
       S.events.push({ ...s.event, baseDuration: s.event.duration, status: 'pending', fresh: true });
       if (s.msg) addMessage(s.msg);
       banner('calendar', '📥 New request', s.event.title);
+      if (s.event.travel) offerShortcut({ kind: 'ride' });
       break;
     }
     case 'insert': {
@@ -244,6 +248,7 @@ function fire(s: Script) {
       S.events.push(ev);
       if (s.msg) addMessage(s.msg);
       else banner('calendar', '📅 Calendar changed', ev.title);
+      if (ev.travel) offerShortcut({ kind: 'ride', eventId: ev.id });
       break;
     }
     case 'move': {
@@ -271,6 +276,7 @@ function fire(s: Script) {
         ev.fresh = true;
         const what = s.remote ? 'now remote 💻' : s.remote === false || s.mustBeInPerson ? `now in person 🚗 (${ev.travel}m each way)` : `moved to ${ev.place}`;
         banner('calendar', '📍 Meeting changed', `${ev.title}: ${what}`);
+        if (ev.travel) offerShortcut({ kind: 'ride', eventId: ev.id });
       }
       if (s.msg) addMessage(s.msg);
       break;
@@ -279,6 +285,8 @@ function fire(s: Script) {
       S.tasks.push({ ...s.task, status: 'open' });
       if (s.msg) addMessage(s.msg);
       else banner('notes', '📝 New task', s.task.text);
+      if (s.task.kind === 'coffee' && s.task.exec) offerShortcut({ kind: 'coffee', exec: s.task.exec, taskId: s.task.id });
+      if (s.task.kind === 'gift') offerShortcut({ kind: 'gift', taskId: s.task.id });
       break;
     case 'call':
       if (S.call) {

@@ -374,3 +374,10 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .chip.warn { background: #ff6b5b; color: #fff; animation: pulse-warn 1.2s ease-in-out infinite; }
 .btn.warn { background: #ff6b5b; color: #fff; }
 @keyframes pulse-warn { 50% { opacity: 0.7; } }
+
+.banner.has-action { border: 2px solid #5b5bd6; }
+.banner-act { margin-left: auto; flex: none; background: #5b5bd6; color: #fff; border-radius: 99px; padding: 8px 12px; font-weight: 800; font-size: 13px; }
+.shortcut { display: flex; align-items: center; gap: 8px; background: linear-gradient(135deg, #ecebff, #f6f0ff); border-radius: 12px; padding: 10px; margin-bottom: 8px; }
+.sc-label { flex: 1; font-weight: 700; font-size: 13px; }
+.sc-build { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.btn.wide { width: 100%; margin-top: 6px; }

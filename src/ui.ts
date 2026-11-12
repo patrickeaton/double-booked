@@ -4,6 +4,7 @@ import {
   minStart, newGame, nextDay, hasApp, isNewApp, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
   toggleSpeed, unschedule,
 } from './engine';
+import { MAX_SHORTCUTS, addShortcut, removeShortcut, runShortcut, shortcutLabel } from './shortcuts';
 import { METER_LABEL, S, dirty, fmtEffect, fmtMoney, isGood, readSave, setRenderer } from './state';
 import type { AppId, CalEvent, ExecId, InboxApp, Meter } from './types';
 
@@ -32,6 +33,7 @@ const APPS: { id: AppId; name: string; icon: string; color: string; desc: string
   { id: 'bundl', name: 'Bundl', icon: '📦', color: '#ff9f1c', desc: 'Gifts and supplies, delivered.' },
   { id: 'card', name: 'Card', icon: '💳', color: '#1f2a44', desc: 'The company card. Watch the runway.' },
   { id: 'ryde', name: 'Ryde', icon: '🚕', color: '#111827', desc: 'Book cars for off-site meetings.' },
+  { id: 'presto', name: 'Presto', icon: '⚡', color: '#5b5bd6', desc: 'One-tap shortcuts. Prep now, react later.' },
   { id: 'tably', name: 'Tably', icon: '🍽️', color: '#e8505b', desc: 'Restaurant reservations. Good luck at 7pm.' },
 ];
 
@@ -62,7 +64,7 @@ export function mountUI(root: HTMLElement) {
   setRenderer(render);
   setInterval(() => {
     const now = performance.now();
-    if (S.banners.some((b) => now - b.born > 4500) || S.toasts.some((t) => now - t.born > 1800)) dirty();
+    if (S.banners.some((b) => now - b.born > (b.ttl ?? 4500)) || S.toasts.some((t) => now - t.born > 1800)) dirty();
   }, 400);
   render();
 }
@@ -119,13 +121,14 @@ function render() {
   refs.dock.replaceChildren(...renderDock(isSplit));
 
   const now = performance.now();
-  S.banners = S.banners.filter((b) => now - b.born < 4500);
+  S.banners = S.banners.filter((b) => now - b.born < (b.ttl ?? 4500));
   S.toasts = S.toasts.filter((t) => now - t.born < 1800);
   refs.banners.replaceChildren(
-    ...S.banners.slice(-2).map((b) =>
-      h('button', { class: 'banner', style: `animation-delay:${b.born - now}ms`, onclick: () => openApp(b.app) },
+    ...[...S.banners.filter((b) => b.action).slice(-1), ...S.banners.filter((b) => !b.action).slice(S.banners.some((b) => b.action) ? -1 : -2)].map((b) =>
+      h('div', { class: `banner ${b.action ? 'has-action' : ''}`, role: 'button', style: `animation-delay:${b.born - now}ms`, onclick: () => openApp(b.app) },
         h('span', { class: 'banner-icon', style: `background:${appOf(b.app).color}` }, appOf(b.app).icon),
         h('span', { class: 'banner-text' }, h('b', {}, b.title), h('span', {}, b.body)),
+        b.action && h('button', { class: 'banner-act', onclick: (ev: Event) => { ev.stopPropagation(); S.banners = S.banners.filter((x) => x !== b); b.action!.run(); dirty(); } }, b.action.label),
       ),
     ),
   );
@@ -484,6 +487,7 @@ function renderApp(app: AppId): HTMLElement {
     case 'bundl': return renderBundl();
     case 'card': return renderCard$();
     case 'notes': return renderNotes();
+    case 'presto': return renderPresto();
     case 'ryde': return renderRyde();
     case 'tably': return renderTably();
   }
@@ -707,6 +711,48 @@ function renderTably() {
           return h('button', { class: `slot ${mine ? 'mine' : taken ? 'taken' : ''}`, disabled: taken, onclick: () => bookTable(r.id, tm, tablyParty) }, mine ? `✓ ${fmt(tm)}` : fmt(tm));
         })),
       )),
+    ),
+  );
+}
+
+let pfKind: 'coffee' | 'gift' | 'rides' = 'coffee';
+let pfTo: ExecId = 'theo';
+let pfDrink = 'black';
+let pfProduct = '';
+let pfPay: 'company' | 'me' = 'company';
+
+function renderPresto() {
+  const full = S.shortcuts.length >= MAX_SHORTCUTS;
+  const kinds = (['coffee', 'gift', 'rides'] as const).filter((k) => k === 'coffee' || (k === 'gift' ? hasApp('bundl') : hasApp('ryde')));
+  if (!kinds.includes(pfKind)) pfKind = 'coffee';
+  const gifts = PRODUCTS;
+  if (!pfProduct) pfProduct = gifts[0].id;
+  const draft = pfKind === 'coffee' ? { kind: 'coffee' as const, drink: pfDrink, to: pfTo } : pfKind === 'gift' ? { kind: 'gift' as const, product: pfProduct, pay: pfPay } : { kind: 'rides' as const };
+  const dupe = S.shortcuts.some((s) => shortcutLabel(s) === shortcutLabel(draft));
+  return h('div', { class: 'app presto' },
+    head('Presto', `Shortcuts · ${S.shortcuts.length}/${MAX_SHORTCUTS} slots`),
+    h('div', { class: 'scroll', 'data-keep': 'presto' },
+      S.shortcuts.length === 0 ? h('p', { class: 'empty' }, 'No shortcuts yet. Set some up now, and when a request lands you\'ll get a one-tap ⚡ button.') : null,
+      ...S.shortcuts.map((sc) => h('div', { class: 'shortcut' },
+        h('span', { class: 'sc-label' }, shortcutLabel(sc)),
+        h('button', { class: 'btn primary', onclick: () => runShortcut(sc) }, '▶ Run'),
+        h('button', { class: 'btn', onclick: () => removeShortcut(sc.id!) }, '✕'),
+      )),
+      h('h4', {}, 'New shortcut'),
+      h('div', { class: 'seg' }, ...kinds.map((k) => h('button', { class: `seg-btn ${pfKind === k ? 'on' : ''}`, onclick: () => { pfKind = k; dirty(); } }, k === 'coffee' ? '☕ Coffee' : k === 'gift' ? '📦 Gift' : '🚕 Rides'))),
+      pfKind === 'coffee' && h('div', { class: 'sc-build' },
+        h('div', { class: 'seg' }, ...(Object.keys(EXECS) as ExecId[]).filter((x) => DAYS.slice(0, S.dayIndex + 1).some((d) => d.execs.includes(x))).map((x) =>
+          h('button', { class: `seg-btn ${pfTo === x ? 'on' : ''}`, onclick: () => { pfTo = x; dirty(); } }, `${EXECS[x].emoji} ${EXECS[x].short}`))),
+        h('div', { class: 'slots' }, ...DRINKS.map((d) => h('button', { class: `slot ${pfDrink === d.id ? 'mine' : ''}`, onclick: () => { pfDrink = d.id; dirty(); } }, `${d.emoji} ${d.name}`))),
+        h('p', { class: 'muted small' }, S.flags.includes(`drink-${pfTo}`) ? `📝 Notes say ${EXECS[pfTo].short} drinks: ${DRINKS.find((d) => d.id === EXECS[pfTo].drink)!.name}` : `📝 You don't know ${EXECS[pfTo].short}'s order yet.`),
+      ),
+      pfKind === 'gift' && h('div', { class: 'sc-build' },
+        h('div', { class: 'slots' }, ...gifts.map((p) => h('button', { class: `slot ${pfProduct === p.id ? 'mine' : ''}`, onclick: () => { pfProduct = p.id; dirty(); } }, `${p.emoji} ${p.name} $${p.price}`))),
+        h('div', { class: 'seg' }, ...(['company', 'me'] as const).map((p) => h('button', { class: `seg-btn ${pfPay === p ? 'on' : ''}`, onclick: () => { pfPay = p; dirty(); } }, p === 'company' ? '💳 Company card' : '🙋 My card'))),
+        h('p', { class: 'muted small' }, 'Sends to whoever is waiting on a gift.'),
+      ),
+      pfKind === 'rides' && h('p', { class: 'muted small sc-build' }, 'Books any missing rides, re-routes ones going to an old address, and cancels rides for meetings that went remote.'),
+      h('button', { class: 'btn primary wide', disabled: full || dupe, onclick: () => addShortcut(draft) }, full ? 'All slots used' : dupe ? 'Already saved' : `Save: ${shortcutLabel(draft)}`),
     ),
   );
 }
