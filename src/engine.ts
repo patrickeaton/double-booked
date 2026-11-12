@@ -77,6 +77,12 @@ const blocks = (e: CalEvent) => e.kind !== 'focus' && e.kind !== 'work';
 /** Meeting rules only apply to meetings. */
 const ruled = (e: CalEvent) => !e.fixed && e.kind !== 'work';
 export const travelOf = (e: CalEvent) => (e.travel && !e.remote ? e.travel : 0);
+/** Where it happens: at the office, on video, or somewhere else (with travel). */
+export const whereOf = (e: CalEvent): 'office' | 'virtual' | 'offsite' => (e.remote ? 'virtual' : e.travel ? 'offsite' : 'office');
+export const atOffice = (e: CalEvent) => whereOf(e) === 'office';
+export const placeLabel = (e: CalEvent) => (e.remote ? '💻 Video call' : e.travel ? `📍 ${e.place ?? 'Off-site'}` : '🏢 Sproutly office');
+/** Prep has to be done by this minute: the meeting start if they're in a Ryde (they prep on the way), or before they leave if they drive. */
+const prepBy = (e: CalEvent) => (e.withRide && travelOf(e) ? (e.start ?? 0) : (e.start ?? 0) - travelOf(e));
 /** Buffers: protected time either side. Travel fills them automatically; you can make them bigger. */
 export const padBefore = (e: CalEvent) => Math.max(travelOf(e), e.bufferBefore ?? 0);
 export const padAfter = (e: CalEvent) => Math.max(travelOf(e), e.bufferAfter ?? 0);
@@ -417,6 +423,7 @@ function fire(s: Script) {
           ev.remoteOk = undefined;
         }
         ev.fresh = true;
+        if (!atOffice(ev)) { ev.withCoffee = false; ev.withCatering = false; }
         const what = s.remote ? 'now remote 💻' : s.remote === false || s.mustBeInPerson ? `now in person 🚗 (${ev.travel}m each way)` : `moved to ${ev.place}`;
         banner('calendar', '📍 Meeting changed', `${ev.title}: ${what}`);
         if (ev.travel) offerShortcut({ kind: 'ride', eventId: ev.id });
@@ -473,7 +480,8 @@ function startEvent(e: CalEvent) {
   }
   e.status = 'running';
   chargeAddons(e);
-  if (e.catering === 'wanted' && !e.withCatering) applyEffects({ standing: -4 }, `No catering at ${e.title}. Awkward.`);
+  if (e.catering === 'wanted' && atOffice(e) && !e.withCatering) applyEffects({ standing: -4 }, `No catering at ${e.title}. Awkward.`);
+  if (e.withRide && travelOf(e) && !e.prep && !rideStale(e)) applyEffects({ standing: 1 }, `${execNames(e.attendees)} read the brief in the Ryde. Walked into ${e.title} ready.`);
   if (e.catering && e.withCatering) applyEffects(e.catering === 'wanted' ? { standing: 3 } : { morale: 3 }, `Catering at ${e.title} was a hit.`);
   if (e.withCoffee && !e.coffee) applyEffects({ morale: 1 }, `Coffee at ${e.title}. Nice touch.`, true);
   if (S.selected === e.id) S.selected = null;
@@ -487,7 +495,7 @@ function startEvent(e: CalEvent) {
   }
   if (e.prep) {
     const busy = S.events.some(
-      (o) => o !== e && blocks(o) && shares(o, e) && ['running', 'done'].includes(o.status) && o.start !== null && overlaps(o.start, end(o), now - e.prep!, now),
+      (o) => o !== e && blocks(o) && shares(o, e) && ['running', 'done'].includes(o.status) && o.start !== null && overlaps(occStart(o), occEnd(o), prepBy(e) - e.prep!, prepBy(e)),
     );
     if (busy) {
       applyEffects({ standing: -6 }, `Walked into ${e.title} unprepared.`);
@@ -872,19 +880,17 @@ export function issuesFor(e: CalEvent): Issue[] {
   }
   if (e.window && (s < e.window[0] || s > e.window[1])) out.push({ icon: '🕒', text: `Should start ${fmt(e.window[0])}–${fmt(e.window[1])}`, bad: true });
   if (e.prep) {
-    const busy = S.events.some((o) => o !== e && blocks(o) && shares(o, e) && (active(o) || o.status === 'done') && o.start !== null && overlaps(occStart(o), occEnd(o), occStart(e) - e.prep!, occStart(e)));
-    if (busy) out.push({ icon: '📋', text: `No ${e.prep}m prep gap`, bad: true });
+    const busy = S.events.some((o) => o !== e && blocks(o) && shares(o, e) && (active(o) || o.status === 'done') && o.start !== null && overlaps(occStart(o), occEnd(o), prepBy(e) - e.prep!, prepBy(e)));
+    if (busy) out.push({ icon: '📋', text: travelOf(e) && !e.withRide ? `No ${e.prep}m prep before they drive (a Ryde would help)` : `No ${e.prep}m prep gap`, bad: true });
   }
   if (e.coffee) {
     const who = e.attendees[0];
     const ordered = e.withCoffee || S.orders.some((o) => o.app === 'brew' && o.to === who && o.arriveAt <= s && o.arriveAt >= s - 90);
     out.push({ icon: '☕', text: ordered ? 'Coffee sorted' : 'Needs coffee', bad: !ordered });
   }
-  if (e.catering === 'wanted') out.push({ icon: '🍱', text: e.withCatering ? 'Catered' : 'Wants catering', bad: !e.withCatering });
-  if (travelOf(e)) out.push({ icon: '🚗', text: `${e.travel}m each way`, bad: false });
+  if (e.catering === 'wanted' && atOffice(e)) out.push({ icon: '🍱', text: e.withCatering ? 'Catered' : 'Wants catering', bad: !e.withCatering });
   if (travelOf(e) && hasApp('ryde')) {
     if (rideStale(e)) out.push({ icon: '🚕', text: `Ride is going to ${e.rideTo}, not ${e.place}`, bad: true });
-    else out.push({ icon: '🚕', text: e.withRide ? 'Ride booked' : 'Needs a ride', bad: !e.withRide });
   }
   if (rideUnneeded(e)) out.push({ icon: '🚕', text: "Ride still booked, but it's remote now", bad: true });
   if (e.remote) out.push({ icon: '💻', text: e.remoteOk === 'meh' ? 'Remote (half the upside)' : 'Remote', bad: false });
@@ -1092,9 +1098,7 @@ function depart(e: CalEvent) {
     return;
   }
   e.departed = true;
-  if (hasApp('ryde') && !e.withRide) {
-    applyEffects({ standing: -3, stress: 4 }, `No ride booked for ${e.title}. ${execNames(e.attendees)} hailed a cab and arrived flustered.`);
-  } else if (rideStale(e)) {
+  if (rideStale(e)) {
     applyEffects({ standing: -5, stress: 6 }, `The Ryde took ${execNames(e.attendees)} to ${e.rideTo}. The meeting was at ${e.place}. Arrived late and furious.`);
     banner('ryde', '🚕 Wrong address!', `${execNames(e.attendees)} got dropped at ${e.rideTo}.`);
   }
@@ -1110,13 +1114,13 @@ export const addonCost = (e: CalEvent) => ({ coffee: COFFEE_ADDON * e.attendees.
 
 function chargeAddons(e: CalEvent) {
   const c = addonCost(e);
-  if (e.withCoffee) {
+  if (e.withCoffee && atOffice(e)) {
     charge(`Brew · coffee for ${e.title}`, c.coffee);
   }
   if (e.withRide && travelOf(e)) {
     charge(`Ryde · ${e.title}`, RIDE_COST * 2);
   }
-  if (e.withCatering) {
+  if (e.withCatering && atOffice(e)) {
     charge(`Catering · ${e.title}`, c.catering);
   }
 }
@@ -1197,10 +1201,13 @@ export function toggleAttendee(id: string, x: ExecId) {
 export function toggleAddon(id: string, which: 'coffee' | 'catering' | 'remote' | 'ride') {
   const e = findEvent(id);
   if (!e || !editable(e)) return;
-  if (which === 'coffee') e.withCoffee = !e.withCoffee;
-  if (which === 'catering') e.withCatering = !e.withCatering;
-  if (which === 'remote' && e.remoteOk && !e.departed) e.remote = !e.remote;
-  if (which === 'ride' && e.travel) {
+  if (which === 'coffee' && atOffice(e)) e.withCoffee = !e.withCoffee;
+  if (which === 'catering' && atOffice(e)) e.withCatering = !e.withCatering;
+  if (which === 'remote' && e.remoteOk && !e.departed) {
+    e.remote = !e.remote;
+    if (!atOffice(e)) { e.withCoffee = false; e.withCatering = false; }
+  }
+  if (which === 'ride' && e.travel && hasApp('ryde')) {
     if (rideStale(e)) e.rideTo = e.place; // re-point it at the new address
     else {
       e.withRide = !e.withRide;

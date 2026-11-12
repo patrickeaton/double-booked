@@ -319,7 +319,7 @@ export const DAYS: DayDef[] = [
     memo: {
       from: 'Bev (People Ops)',
       subject: 'Halfway! + Ryde + Trellis',
-      body: "You're halfway through probation! Margo says you're \"fine\". From Margo, that's practically a hug.\n\nThere's now a Team calendar for company-wide things. Everyone's meant to be at those.\n\nNew: Ryde. Off-site meetings now need a car — book one, or watch an exec hail a cab in the rain.\n\nAlso new: Trellis 🎫, our ticket tracker. People need actual time to do actual work. Book them heads-down blocks. They're not meetings, so the meeting rules don't apply. Meetings on top of them do, however, ruin them.",
+      body: "You're halfway through probation! Margo says you're \"fine\". From Margo, that's practically a hug.\n\nThere's now a Team calendar for company-wide things. Everyone's meant to be at those.\n\nNew: Ryde. For off-site meetings, book a car and they prep on the way. Otherwise they drive themselves, and have to be prepped before they leave.\n\nAlso new: Trellis 🎫, our ticket tracker. People need actual time to do actual work. Book them heads-down blocks. They're not meetings, so the meeting rules don't apply. Meetings on top of them do, however, ruin them.",
     },
     execs: W1T,
     rules: WEEKDAY_RULES,

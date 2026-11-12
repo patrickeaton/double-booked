@@ -4,7 +4,7 @@ import { CAL_END, CAL_START, DAY_END, DAY_START, EXECS, isBoss, PAYROLL, PRODUCT
 import {
   answerCall, buyProduct, choose, chooseCall, continueGame, day, declineCall, declineEvent, findEvent, issuesFor,
   minStart, newGame, nextDay, hasApp, isNewApp, myMeeting, stepOut, meterEffects, runwayDays, cardFrozen, stressPace, activeExecs, toggleSavedDrink, newEndless, continueEndless, rideStale, rideUnneeded, bookTable, slotTaken, bookings, earliestDelivery, toggleAddon, canAddons, addonCost, travelOf, autoPlace, nudgeStart, canBump, canResize, canWrap, bumpEvent, bumpPenaltyFor, resizeEvent, wrapUpNow, openApp, orderDrink, placeEvent, retryDay, select, startDay, startPrep, togglePause,
-  toggleSpeed, unschedule, padBefore, padAfter, canBuffer, setBuffer, scheduleTicket, ticketBlock, toggleAttendee, canEditAttendees, skippedFrom, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
+  toggleSpeed, unschedule, whereOf, atOffice, placeLabel, padBefore, padAfter, canBuffer, setBuffer, scheduleTicket, ticketBlock, toggleAttendee, canEditAttendees, skippedFrom, findFuture, unbookFuture, lastViewDay, dayDate, isWeekendDay,
 } from './engine';
 import { avatarEl } from './avatars';
 import { coffeeOf, metPeople, statusOf } from './people';
@@ -615,7 +615,7 @@ function renderBlock(e: CalEvent) {
     !small && h('div', { class: 'evt-time' }, span2(start, start + e.duration), e.overranBy ? ` (+${e.overranBy}m)` : ''),
     !small && h('div', { class: 'evt-issues' },
       [...(e.status === 'scheduled' ? issues.filter((i) => i.bad).map((i) => i.icon) : []),
-        e.remote ? '💻' : '', e.withCoffee ? '☕' : '', e.withCatering ? '🍱' : ''].filter(Boolean).join(' ')),
+        e.remote ? '💻' : whereOf(e) === 'offsite' ? (e.withRide ? '🚕' : '📍') : '', e.withCoffee ? '☕' : '', e.withCatering ? '🍱' : ''].filter(Boolean).join(' ')),
   );
   if (movable) makeDraggable(el, e.id, true);
   else el.addEventListener('click', () => select(e.id));
@@ -636,6 +636,23 @@ function renderOtherBlock(e: CalEvent) {
   );
   if (mine) makeDraggable(el, e.id, true);
   return el;
+}
+
+/** Where it happens, the in-person/video switch, and (off-site) the ride share. */
+function whereRow(e: CalEvent) {
+  const can = canAddons(e);
+  const off = whereOf(e) === 'offsite';
+  return h('div', { class: 'where' },
+    e.remoteOk && can
+      ? h('div', { class: 'seg where-seg' },
+          h('button', { class: `seg-btn ${e.remote ? '' : 'on'}`, onclick: () => e.remote && toggleAddon(e.id, 'remote') }, e.travel ? `📍 ${e.place ?? 'In person'}` : '🏢 Office'),
+          h('button', { class: `seg-btn ${e.remote ? 'on' : ''}`, onclick: () => !e.remote && toggleAddon(e.id, 'remote') }, '💻 Video', e.remoteOk === 'meh' ? h('small', {}, ' · less impact') : null))
+      : h('span', { class: 'where-lbl' }, placeLabel(e)),
+    off && h('span', { class: 'where-note' }, `${e.travel}m each way`),
+    (off || rideUnneeded(e)) && hasApp('ryde') && can && h('button', { class: `chip ride ${rideStale(e) || rideUnneeded(e) ? 'warn' : e.withRide ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'ride') },
+      rideUnneeded(e) ? '🚕 Cancel ride (it\'s video now)' : rideStale(e) ? `🚕 Fix ride → ${e.place}` : e.withRide ? `🚕 Ryde booked · $${RIDE_COST * 2}` : `🚗 Driving · book a Ryde $${RIDE_COST * 2}?`),
+    off && hasApp('ryde') && !e.withRide && h('span', { class: 'where-note' }, 'In a Ryde they prep on the way.'),
+  );
 }
 
 /** Tap to take someone off the invite (or put them back). */
@@ -666,7 +683,7 @@ function renderDetails(e: CalEvent) {
       h('div', { class: 'd-sub' },
         h('span', { class: `d-pill st-${e.status}` }, status),
         e.start !== null ? span2(e.start, e.start + e.duration) : `${e.duration} min`,
-        e.place && !e.remote ? ` · 📍 ${e.place}` : e.remote ? ' · 💻 Remote' : ''),
+        ` · ${placeLabel(e)}`),
       e.note && h('div', { class: 'd-note' }, e.note),
       issues.length > 0 && h('div', { class: 'req-tags' }, ...issues.map((i) => h('span', { class: `tag ${i.bad ? 'bad' : ''}` }, `${i.icon} ${i.text}`))),
     ),
@@ -696,15 +713,12 @@ function renderDetails(e: CalEvent) {
         h('span', { class: 'd-hint' }, travelOf(e) ? `Includes ${travelOf(e)}m travel each way.` : 'Prep time before, slack for overruns after.')),
       row('Who', canEditAttendees(e) ? attendeeChips(e) : h('div', { class: 'who-chips' }, ...e.attendees.map((x) => h('span', { class: 'who-chip on fixed' }, x === 'team' ? '🌱' : face(x, 20), EXECS[x].short)))),
       skipped.length > 0 && h('div', { class: 'd-warn' }, `Skipping costs ${e.fixed || e.attendees.includes('team') ? '🤝 morale' : '⭐ standing'} when it starts (−2 each).`),
-      canAddons(e) && row('Extras',
+      e.kind !== 'focus' && e.kind !== 'work' && row('Where', whereRow(e)),
+      canAddons(e) && atOffice(e) && row('Extras',
         h('div', { class: 'addons' },
           h('button', { class: `chip ${e.withCoffee ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'coffee') },
             `☕ Coffee $${addonCost(e).coffee}`, e.coffee && h('small', {}, S.flags.includes(`drink-${e.attendees[0]}`) ? ' · their usual' : ' · house latte?')),
-          e.catering && h('button', { class: `chip ${e.withCatering ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'catering') }, `🍱 Catering $${addonCost(e).catering}`),
-          e.travel && hasApp('ryde') && (!e.remote || e.withRide) && h('button', { class: `chip ${rideStale(e) || rideUnneeded(e) ? 'warn' : e.withRide ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'ride') },
-            rideUnneeded(e) ? '🚕 Cancel ride (remote now)' : rideStale(e) ? `🚕 Fix ride → ${e.place}` : `🚕 Ride $${RIDE_COST * 2}`),
-          e.remoteOk && h('button', { class: `chip ${e.remote ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'remote') },
-            e.remote ? '💻 Remote' : `🚗 In person · ${e.travel}m each way`, e.remote && e.remoteOk === 'meh' ? h('small', {}, ' · less impact') : null))),
+          e.catering && h('button', { class: `chip ${e.withCatering ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'catering') }, `🍱 Catering $${addonCost(e).catering}`))),
     ),
   );
 }
@@ -766,16 +780,12 @@ function renderSelection(e: CalEvent) {
       h('button', { class: 'btn', disabled: padAfter(e) <= travelOf(e), onclick: () => setBuffer(e.id, 'after', -15) }, '−'),
       h('b', { class: 'len' }, `${padAfter(e)}m after`),
       h('button', { class: 'btn', disabled: padAfter(e) >= 120, onclick: () => setBuffer(e.id, 'after', 15) }, '+')),
-    canAddons(e) && h('div', { class: 'addons' },
+    e.kind !== 'focus' && e.kind !== 'work' && h('div', { class: 'stepper' }, h('span', { class: 'small muted lbl' }, 'Where'), whereRow(e)),
+    canAddons(e) && atOffice(e) && h('div', { class: 'addons' },
       h('button', { class: `chip ${e.withCoffee ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'coffee') },
         `☕ Coffee $${addonCost(e).coffee}`,
         e.coffee && h('small', {}, S.flags.includes(`drink-${e.attendees[0]}`) ? ' · their usual' : ' · house latte?')),
       e.catering && h('button', { class: `chip ${e.withCatering ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'catering') }, `🍱 Catering $${addonCost(e).catering}`),
-      e.travel && hasApp('ryde') && (!e.remote || e.withRide) && h('button', { class: `chip ${rideStale(e) || rideUnneeded(e) ? 'warn' : e.withRide ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'ride') },
-        rideUnneeded(e) ? '🚕 Cancel ride (remote now)' : rideStale(e) ? `🚕 Fix ride → ${e.place}` : `🚕 Ride $${RIDE_COST * 2}`),
-      e.remoteOk && h('button', { class: `chip ${e.remote ? 'on' : ''}`, onclick: () => toggleAddon(e.id, 'remote') },
-        e.remote ? '💻 Remote' : `🚗 In person · ${e.travel}m each way`,
-        e.remote && e.remoteOk === 'meh' ? h('small', {}, ' · less impact') : null),
     ),
     h('div', { class: 'selbar-actions' },
       e.status === 'pending' ? h('span', { class: 'small hint-strong' }, 'or tap a time 👇') : h('span', { class: 'spacer' }),
@@ -1277,7 +1287,7 @@ function renderRyde() {
         rideUnneeded(e) && e.status === 'scheduled' ? h('button', { class: 'btn warn', onclick: () => toggleAddon(e.id, 'ride') }, 'Cancel (remote now)')
           : e.remote ? h('span', { class: 'small muted' }, '💻 no ride needed')
           : rideStale(e) && e.status === 'scheduled' && !e.departed ? h('button', { class: 'btn warn', onclick: () => toggleAddon(e.id, 'ride') }, 'Update address')
-          : e.departed || e.status !== 'scheduled' ? h('span', { class: 'small muted' }, e.withRide ? '✓ rode' : 'took a cab')
+          : e.departed || e.status !== 'scheduled' ? h('span', { class: 'small muted' }, e.withRide ? '✓ rode' : 'drove')
           : h('button', { class: `btn ${e.withRide ? '' : 'primary'}`, onclick: () => toggleAddon(e.id, 'ride') }, e.withRide ? '✓ Booked' : `Book $${RIDE_COST * 2}`)))),
   );
 }
