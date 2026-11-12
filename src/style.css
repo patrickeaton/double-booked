@@ -551,3 +551,10 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
   .dock { overflow: visible; justify-content: space-around; }
   .dock-app:first-child, .dock-app:last-child { margin: 0; }
 }
+
+/* Phone: date and time sit on the left, controls on the right */
+@media (max-width: 819px) {
+  .status-inner { grid-template-columns: 1fr auto; }
+  .status-left { display: none; }
+  .status-center { align-items: flex-start; }
+}
