@@ -4,7 +4,7 @@ import { TABLE_TIMES, fmt, isBoss, t } from './data';
 import type { AppId, Choice, DayDef, Effects, EventDef, ExecId, InboxApp, Script } from './types';
 
 type Rng = () => number;
-function mulberry32(seed: number): Rng {
+export function mulberry32(seed: number): Rng {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) | 0;

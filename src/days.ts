@@ -266,12 +266,12 @@ export const DAYS: DayDef[] = [
     adhoc: 3,
     apps: [],
     subtitle: 'No standup. No prep. Your phone is still on, though.',
-    memo: weekendMemo("It's Saturday", "No calendar to plan. Just your phone, pinging.\n\nResting lowers stress all day. Answering work pings earns standing, but costs you the rest. Choose."),
+    memo: weekendMemo("It's Saturday", "No work calendar today. Your own calendar, though, is empty, and that's the problem.\n\nThe week stacks stress up: every workday adds more, and weeknights barely touch it. Weekends are where it comes down. Book some plans (brunch, a run, a nap) and they'll take the edge off.\n\nWork pings still arrive. Answering earns standing and costs calm. Choose."),
     execs: W1,
     rules: [],
     events: [
       {
-        id: 'd4-deck', title: 'Deck review (Zoom) · Margo', attendees: ['margo'], start: null, duration: 30, remote: true, deadline: t('15:00'),
+        id: 'd4-deck', title: 'Deck review (Zoom) · Margo', attendees: ['margo', 'me'], start: null, duration: 30, remote: true, deadline: t('15:00'),
         reward: { standing: 3, stress: 6 }, missPenalty: { standing: -2 }, declinePenalty: { standing: -1 }, bumpPenalty: { standing: -1 },
         note: 'On a Saturday. Declining is allowed. Probably.',
       },
@@ -970,7 +970,7 @@ export function dayAt(i: number): DayDef {
     ? {
         title: `Endless · Day ${i + 1}`, weekday, weekend: true, adhoc: 3, apps: [],
         subtitle: 'A weekend. In theory.',
-        memo: weekendMemo(weekday === 'Sat' ? "It's Saturday" : "It's Sunday", 'Rest lowers stress. Work pings raise standing. You know the drill.'),
+        memo: weekendMemo(weekday === 'Sat' ? "It's Saturday" : "It's Sunday", 'Book some plans. Rest. Work pings raise standing and cost calm. You know the drill.'),
         execs: ['margo', 'theo', 'dana', 'me'], rules: [], events: [], script: [],
       }
     : {

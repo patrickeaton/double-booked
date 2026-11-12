@@ -246,8 +246,8 @@ function renderStatus() {
     h('span', { class: 'status-center' }, h('b', {}, `${dateFor(S.dayIndex)} · ${time}`), h('small', {}, S.dayIndex < DAYS.length ? `Day ${S.dayIndex + 1} of ${DAYS.length}` : `Endless · Day ${S.dayIndex + 1}`)),
     h('span', { class: 'status-right' },
       S.phase === 'prep' && (() => {
-        const n = S.events.filter((e) => e.status === 'pending').length;
-        return h('button', { class: 'start-btn', onclick: startDay, title: n ? `${n} requests still unbooked` : 'Start the day' }, 'Start day', n > 0 && h('span', { class: 'start-count' }, n), ' →');
+        const n = S.events.filter((e) => e.status === 'pending' && !e.optional).length;
+        return h('button', { class: 'start-btn', onclick: startDay, title: n ? `${n} requests still unbooked` : 'Start the day' }, day().weekend ? `Start ${day().weekday === 'Sat' ? 'Saturday' : 'Sunday'} 🌴` : 'Start day', n > 0 && h('span', { class: 'start-count' }, n), ' →');
       })(),
       waitingPill(),
       h('button', { class: 'chip-btn sound-btn', onclick: () => { toggleSound(); dirty(); }, title: soundOn() ? 'Mute alerts' : 'Turn alerts on', 'aria-label': soundOn() ? 'Mute alerts' : 'Turn alerts on' }, soundOn() ? '🔔' : '🔕'),
@@ -526,7 +526,7 @@ function renderCalendar() {
     ? h('div', { class: 'drawer-wrap' },
         h('div', { class: 'drawer-backdrop', style: sideDelay(), onclick: () => { drawerOpen = false; dirty(); } }),
         h('aside', { class: 'drawer', style: sideDelay() },
-          h('div', { class: 'drawer-head' }, h('b', {}, 'Requests'), h('span', { class: 'count' }, pending.length),
+          h('div', { class: 'drawer-head' }, h('b', {}, day().weekend ? 'Plans & requests' : 'Requests'), h('span', { class: 'count' }, pending.length),
             h('button', { class: 'win-btn', onclick: () => { drawerOpen = false; dirty(); } }, '✕')),
           h('p', { class: 'muted small drawer-hint' }, 'Tap one to pick a time, or drag it onto the calendar.'),
           h('div', { class: 'drawer-cards', 'data-keep': 'drawer' },

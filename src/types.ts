@@ -88,6 +88,8 @@ export interface CalEvent {
   flagOnDone?: string;
   /** Can happen any day up to and including this one (absolute day index). Without it, it's today or never. */
   dueDay?: number;
+  /** Weekend plans: nice to have. Left unbooked, they just don't happen. */
+  optional?: boolean;
   /** A copy of a meeting that got missed, back in the tray to be rebooked. */
   rescheduled?: boolean;
   /** Protected empty time around it (minutes). Travel sets the minimum. */

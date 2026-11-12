@@ -8,6 +8,7 @@ import {
 import { offerShortcut } from './shortcuts';
 import { generateAdhoc } from './adhoc';
 import { ticketsFor } from './tickets';
+import { weekdayBreathers, weekendPlans } from './weekend';
 import type { AppId, CalEvent, Effects, ExecId, Message, MsgDef, Script } from './types';
 
 export const day = () => dayAt(S.dayIndex);
@@ -18,6 +19,15 @@ export const cardFrozen = () => runwayDays() < 5;
 export const lowMorale = () => S.meters.morale < 35;
 export const highMorale = () => S.meters.morale >= 70;
 /** Stress makes the day run faster and messages expire sooner. */
+/** Workdays in a row, today included. Monday is 1, Friday is 5; the weekend resets it. */
+export function workStreak(i = S.dayIndex) {
+  let n = 0;
+  while (i - n >= 0 && !dayAt(i - n).weekend) n++;
+  return n;
+}
+/** Stress per hour that the week itself adds, before anything goes wrong. */
+const grindPerMin = () => (day().weekend ? 0 : 0.004 + 0.004 * workStreak());
+export const grindPerHour = () => Math.round(grindPerMin() * 60 * 10) / 10;
 export const stressPace = () => (S.meters.stress >= 80 ? 1.3 : S.meters.stress >= 60 ? 1.15 : 1);
 
 export interface MeterEffect { text: string; good: boolean }
@@ -54,6 +64,9 @@ export function meterEffects(): Record<'standing' | 'runway' | 'morale' | 'stres
   const stress: MeterEffect[] = [];
   if (stressPace() > 1) stress.push({ text: `Frazzled: the day is running ${Math.round((stressPace() - 1) * 100)}% faster.`, good: false });
   if (m.stress >= 80) stress.push({ text: 'Messages are expiring sooner.', good: false });
+  if (m.stress >= 60) stress.push({ text: "Short with people: good news lands 20% softer.", good: false });
+  if (day().weekend) stress.push({ text: 'Weekend: book plans on your calendar to bring stress down.', good: true });
+  else stress.push({ text: `${workStreak() === 1 ? 'Fresh week' : `Day ${workStreak()} of the week`}: the grind adds ${grindPerHour()} stress an hour.`, good: workStreak() <= 2 });
   return { standing, runway, morale, stress };
 }
 /** Today's calendars, minus anyone who has left (e.g. Dana after the board vote). */
@@ -66,6 +79,7 @@ export const findEvent = (id: string | null) => S.events.find((e) => e.id === id
 export const isMyLife = (e: CalEvent) => e.kind === 'personal' && e.attendees.length === 1 && e.attendees[0] === 'me';
 function lifeOnly(e: CalEvent, fx: Effects): Effects {
   if (!isMyLife(e)) return fx;
+  if (e.optional) return fx;
   const hurt = Object.entries(fx).reduce((n, [k, v]) => n + (k === 'stress' ? Math.max(0, v as number) : Math.max(0, -(v as number))), 0);
   return { stress: Math.max(3, Math.round(hurt)) };
 }
@@ -190,6 +204,8 @@ export function setupDay(i: number) {
   S.events.push(...S.incoming.map((e) => ({ ...e })));
   S.events.push(...(S.future[i] ?? []).map((e) => ({ ...e, status: 'scheduled' as const, fresh: false })));
   delete S.future[i];
+  const mine = d.weekend ? weekendPlans(i, S.seed) : d.execs.includes('me') ? weekdayBreathers(i, S.seed) : [];
+  S.events.push(...mine.map((e) => ({ ...e, baseDuration: e.duration, status: 'pending' as const })));
   // Saves from before Theo's exit set the flag: if he resigned and his last day has passed, he's gone.
   if (S.flags.includes('theo-leaves') && i >= 13 && !S.flags.includes('gone-theo')) S.flags.push('gone-theo');
   const gone = (['margo', 'theo', 'dana'] as ExecId[]).filter((x) => S.flags.includes(`gone-${x}`));
@@ -210,6 +226,12 @@ export function setupDay(i: number) {
   S.tasks = [];
   S.orders = [];
   S.log = [];
+  // The week stacks up: Tuesday starts 3 stress worse than Monday, Friday 12.
+  if (!d.weekend && workStreak(i) > 1) {
+    const g = 3 * (workStreak(i) - 1);
+    S.meters.stress = Math.min(100, S.meters.stress + g);
+    S.log.push({ at: PREP_TIME, text: `${d.weekday} morning. The week is wearing on you.`, effects: { stress: g } });
+  }
   S.call = null;
   S.queue = [...d.script, ...generateAdhoc(i, { ...d, execs: d.execs.filter((x) => !S.flags.includes(`gone-${x}`)) }, S.seed + i * 7919, hasApp, S.meters.morale)].map((s) => ({ ...s })).sort((a, b) => a.at - b.at);
   bookings.length = 0;
@@ -227,7 +249,6 @@ export function setupDay(i: number) {
 }
 
 export function startPrep() {
-  if (day().weekend) return startDay();
   S.phase = 'prep';
   dirty();
 }
@@ -375,7 +396,8 @@ function advance() {
   // stress from the unread pile
   const unread = S.messages.filter((m) => !m.read).length + S.messages.filter((m) => m.choices && m.chosen === undefined).length;
   if (unread) S.meters.stress = Math.min(100, S.meters.stress + unread * 0.008);
-  if (day().weekend) S.meters.stress = Math.max(0, S.meters.stress - 0.03);
+  if (day().weekend) S.meters.stress = Math.max(0, S.meters.stress - 0.01);
+  else S.meters.stress = Math.min(100, S.meters.stress + grindPerMin());
 
   if (checkGameOver()) return;
   if (now >= DAY_END) endDay();
@@ -537,7 +559,7 @@ function startEventRaw(e: CalEvent) {
       fxFor([RULE_WHO[id]], pen, teamWide ? `${e.title} landed in a rule (${r.short}). Company-wide, so mostly forgiven.` : `Broke a rule (${r.short}): ${e.title}`);
     }
   }
-  if (e.window && e.start !== null && (e.start < e.window[0] || e.start > e.window[1])) {
+  if (e.window && !e.optional && e.start !== null && (e.start < e.window[0] || e.start > e.window[1])) {
     applyEffects({ standing: -4 }, `Wrong time for ${e.title}`);
   }
   if (e.prep) {
@@ -1479,6 +1501,7 @@ export function endDay() {
   }
   for (const e of S.events) {
     if (e.status !== 'pending') continue;
+    if (e.optional) { e.status = 'declined'; continue; }
     if (e.dueDay !== undefined && e.dueDay > S.dayIndex) {
       // Not due yet: it waits in tomorrow's tray.
       S.carry.push({ ...e, fresh: false });
@@ -1523,6 +1546,7 @@ export function endDay() {
     S.strikeNotes.push(n);
   }
 
+  notes.push(nightNote());
   if (S.carry.length) notes.push(`Pushed to tomorrow: ${S.carry.map((e) => e.title).join(', ')}.`);
   if (!day().weekend) {
     S.meters.runway -= PAYROLL;
@@ -1552,8 +1576,17 @@ export function endDay() {
 const weight = (e: Effects) =>
   Math.abs(e.standing ?? 0) + Math.abs(e.morale ?? 0) + Math.abs(e.stress ?? 0) + Math.abs(e.runway ?? 0) / 1000;
 
+/** How much a night's sleep takes off. Weeknights barely dent it; the weekend is where you recover. */
+const nightRest = () => (day().weekend ? 15 : dayAt(S.dayIndex + 1).weekend ? 12 : 8);
+function nightNote() {
+  const plans = S.events.filter((e) => e.optional && e.status === 'done').length;
+  if (day().weekend) return `A proper night's sleep: −${nightRest()} stress.${plans ? '' : ' You booked nothing for yourself today, though.'}`;
+  if (dayAt(S.dayIndex + 1).weekend) return `Friday night. Sleep takes off ${nightRest()} stress. The weekend has to do the rest.`;
+  return `Tonight's sleep takes off just ${nightRest()} stress. Tomorrow starts ${3 * workStreak()} worse. The week is stacking up.`;
+}
+
 export function nextDay() {
-  S.meters.stress = Math.max(0, S.meters.stress - 20);
+  S.meters.stress = Math.max(0, S.meters.stress - nightRest());
   if (!day().weekend) S.meters.standing = Math.max(0, S.meters.standing - 3);
   S.incoming = S.carry;
   S.carry = [];
@@ -1593,3 +1626,8 @@ export function openApp(app: AppId) {
 }
 
 export { CAL_START };
+
+/** Dev only: run the clock forward without waiting (used by the balance bot). */
+export function devAdvance(minutes: number) {
+  for (let k = 0; k < minutes && S.phase === 'day'; k++) advance();
+}

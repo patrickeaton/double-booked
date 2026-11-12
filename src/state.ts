@@ -200,7 +200,7 @@ export function applyEffects(eff: Effects | undefined, text: string, quiet = fal
   if (eff.standing) {
     eff = { ...eff };
     // The higher you are, the harder it is to impress anyone. Mistakes hit harder across the board.
-    if (eff.standing! > 0) eff.standing = Math.max(1, Math.round(eff.standing! * gainScale(S.meters.standing)));
+    if (eff.standing! > 0) eff.standing = Math.max(1, Math.round(eff.standing! * gainScale(S.meters.standing) * (S.meters.stress >= 60 ? 0.8 : 1)));
     else eff.standing = Math.round(eff.standing! * 1.3);
   }
   if (who.length) {
