@@ -843,3 +843,23 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 /* Friendly replies to messages that didn't ask for anything */
 .choices.friendly { opacity: 0.9; }
 .btn.choice.soft { background: transparent; border: 1px dashed var(--line); font-weight: 600; }
+
+/* Details footer: one wide main action, then equal tiles that always line up */
+.d-actions { display: flex; flex-direction: column; gap: 8px; }
+.drawer-foot .d-actions { display: flex; }
+.d-main { width: 100%; border-radius: 14px; padding: 13px 12px; font-weight: 800; font-size: 15px; background: #f1eee6; }
+.d-main.pick { background: var(--ink); color: #fff; }
+.d-main.danger { background: #ffe9e6; color: #b42318; }
+.d-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.d-tiles.n1 { grid-template-columns: 1fr; }
+.d-tiles.n2 { grid-template-columns: repeat(2, 1fr); }
+.d-tiles .d-act { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 9px 6px; min-height: 68px; font-size: 13px; }
+.d-tiles .d-act b { font-weight: 800; }
+.d-ico { font-size: 17px; line-height: 1; height: 18px; }
+.d-tiles .d-act small { font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.d-tiles .d-act.danger small { color: #d4675c; }
+
+/* Thread headers: the back button never wraps; long names shrink with an ellipsis instead */
+.back-head { grid-template-columns: minmax(max-content, 1fr) minmax(0, auto) 1fr; }
+.back-btn { white-space: nowrap; }
+.back-head h2 { display: block; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

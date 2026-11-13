@@ -816,12 +816,18 @@ function detailActions(e: CalEvent) {
   const bumpFx = canBump(e) ? bumpPenaltyFor(e) : null;
   const bumpCost = bumpFx && Object.entries(bumpFx).filter(([, v]) => v).map(([m, v]) => `${METER_ICON[m as Meter]}${m === 'runway' ? fmtMoney(v as number) : v}`).join(' ');
   if (!canAct && !canWrap(e)) return null;
+  // One wide main action, then the rest as equal tiles: icon, label, and a cost line (blank if none) so they line up.
+  const tile = (cls: string, icon: string, label: string, sub: string, onclick: () => void) =>
+    h('button', { class: `d-act ${cls}`, onclick }, h('span', { class: 'd-ico' }, icon), h('b', {}, label), h('small', {}, sub || '\u00a0'));
+  const tiles = [
+    e.status === 'scheduled' && !e.fixed && tile('', '↩︎', 'Unbook', 'back to requests', () => unschedule(e.id)),
+    bumpFx && tile('', '📆', 'Tomorrow', bumpCost || 'free', () => bumpEvent(e.id)),
+    canAct && tile('danger', '✕', 'Decline', '', () => declineEvent(e.id)),
+  ].filter(Boolean) as HTMLElement[];
   return h('div', { class: 'd-actions' },
-    canWrap(e) && h('button', { class: 'd-act danger', onclick: () => wrapUpNow(e.id) }, '✂️ Wrap up now'),
-    canAct && h('button', { class: 'd-act pick', onclick: () => { detailOpen = false; dirty(); } }, e.status === 'pending' ? '👆 Pick a time' : '👆 Move'),
-    e.status === 'scheduled' && !e.fixed && h('button', { class: 'd-act', onclick: () => unschedule(e.id) }, '↩︎ Unbook'),
-    bumpFx && h('button', { class: 'd-act', onclick: () => bumpEvent(e.id) }, '📆 Tomorrow', h('small', {}, bumpCost || 'free')),
-    canAct && h('button', { class: 'd-act danger', onclick: () => declineEvent(e.id) }, 'Decline'),
+    canWrap(e) && h('button', { class: 'd-main danger', onclick: () => wrapUpNow(e.id) }, '✂️ Wrap up now'),
+    canAct && h('button', { class: 'd-main pick', onclick: () => { detailOpen = false; dirty(); } }, e.status === 'pending' ? '👆 Pick a time' : '👆 Move it'),
+    tiles.length > 0 && h('div', { class: `d-tiles n${tiles.length}` }, ...tiles),
   );
 }
 
