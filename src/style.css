@@ -863,3 +863,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .back-head { grid-template-columns: minmax(max-content, 1fr) minmax(0, auto) 1fr; }
 .back-btn { white-space: nowrap; }
 .back-head h2 { display: block; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Swipe-to-dismiss: the banner follows your finger; vertical scrolling still works */
+.banner { touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.banner.dragging { transition: none; }

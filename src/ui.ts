@@ -182,7 +182,7 @@ function render() {
   keepScroll(refs.waiting, () => refs.waiting.replaceChildren(...renderWaiting()));
 
   const now = performance.now();
-  S.banners = S.banners.filter((b) => now - b.born < (b.ttl ?? 4500)
+  S.banners = S.banners.filter((b) => (swipe?.id === b.id || now - b.born < (b.ttl ?? 4500))
     // Already answered (here, in the thread, or in Waiting on you)? Then the notification has done its job.
     && !(b.msgId && S.messages.find((m) => m.id === b.msgId)?.chosen !== undefined)
     // The Waiting on you panel already lists every message notification.
@@ -193,14 +193,18 @@ function render() {
       {
         const m = b.msgId ? S.messages.find((x) => x.id === b.msgId) : undefined;
         const replies = m?.choices && m.chosen === undefined ? m.choices : null;
-        return h('div', { class: `banner ${b.action ? 'has-action' : ''} ${replies ? 'has-replies' : ''}`, role: 'button', style: `animation-delay:${b.born - now}ms`,
-          onclick: () => { S.banners = S.banners.filter((x) => x !== b); if (m) openMessage(m.id); else openApp(b.app); } },
+        const dragging = swipe?.id === b.id;
+        const el = h('div', { class: `banner ${b.action ? 'has-action' : ''} ${replies ? 'has-replies' : ''} ${dragging ? 'dragging' : ''}`, role: 'button', 'data-bid': b.id,
+          style: dragging ? `animation:none;transform:translateX(${swipe!.dx}px);opacity:${bannerFade(swipe!.dx)}` : `animation-delay:${b.born - now}ms`,
+          onclick: () => { if (Date.now() < swipeClickBlock) return; S.banners = S.banners.filter((x) => x !== b); if (m) openMessage(m.id); else openApp(b.app); } },
           h('span', { class: 'banner-icon', style: `background:${appOf(b.app).color}` }, appOf(b.app).icon),
           h('span', { class: 'banner-text' }, h('b', {}, b.title), h('span', {}, b.body)),
           b.action && h('button', { class: 'banner-act', onclick: (ev: Event) => { ev.stopPropagation(); S.banners = S.banners.filter((x) => x !== b); b.action!.run(); dirty(); } }, b.action.label),
           replies && h('div', { class: 'banner-replies' },
             ...replies.map((c, i) => h('button', { class: 'banner-reply', onclick: (ev: Event) => { ev.stopPropagation(); S.banners = S.banners.filter((x) => x !== b); choose(m!.id, i); } }, c.label))),
         );
+        el.addEventListener('pointerdown', (ev: PointerEvent) => startSwipe(ev, b.id));
+        return el;
       }),
   );
   refs.toasts.replaceChildren(...S.toasts.slice(-4).map((t) => h('div', { class: `toast ${t.good ? 'good' : 'bad'}`, style: `animation-delay:${t.born - now}ms` }, t.text)));
@@ -1575,6 +1579,57 @@ function renderPaused() {
       h('b', {}, 'Paused while you were away'),
       h('span', {}, `${fmt(S.now)} · everyone is frozen mid-sentence`),
       h('small', {}, 'Tap anywhere to pick it back up')));
+}
+
+// ───── Swipe a notification left to dismiss it ─────
+// Banners are rebuilt every tick, so the drag lives out here and moves whichever element is current.
+let swipe: { id: number; x0: number; y0: number; dx: number; locked: boolean } | null = null;
+let swipeClickBlock = 0;
+const bannerFade = (dx: number) => Math.max(0.15, 1 + dx / 260).toFixed(2);
+const bannerEl = (id: number) => document.querySelector<HTMLElement>(`.banner[data-bid="${id}"]`);
+
+function startSwipe(ev: PointerEvent, id: number) {
+  if ((ev.target as HTMLElement).closest('button') || ev.button !== 0) return;
+  swipe = { id, x0: ev.clientX, y0: ev.clientY, dx: 0, locked: false };
+  const move = (e: PointerEvent) => {
+    if (!swipe) return;
+    const dx = e.clientX - swipe.x0, dy = e.clientY - swipe.y0;
+    if (!swipe.locked) {
+      if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) return end(); // that was a scroll
+      if (Math.abs(dx) < 6) return;
+      swipe.locked = true;
+    }
+    // Left is free; right only gives a little, like iOS.
+    swipe.dx = dx < 0 ? dx : dx / 4;
+    const el = bannerEl(swipe.id);
+    if (el) { el.classList.add('dragging'); el.style.animation = 'none'; el.style.transform = `translateX(${swipe.dx}px)`; el.style.opacity = bannerFade(swipe.dx); }
+  };
+  const end = (e?: PointerEvent) => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', end);
+    window.removeEventListener('pointercancel', end);
+    const s = swipe;
+    swipe = null;
+    if (!s) return;
+    // Where the finger lifted counts too: a quick flick may not send many moves.
+    if (e?.type === 'pointerup') {
+      const dx = e.clientX - s.x0;
+      if (Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(e.clientY - s.y0)) { s.locked = true; s.dx = dx < 0 ? dx : dx / 4; }
+    }
+    if (s.locked) swipeClickBlock = Date.now() + 250;
+    const el = bannerEl(s.id);
+    if (s.dx < -70) {
+      // Fling it the rest of the way, then drop it.
+      if (el) { el.style.transition = 'transform 0.18s ease-in, opacity 0.18s ease-in'; el.style.transform = 'translateX(-120%)'; el.style.opacity = '0'; }
+      setTimeout(() => { S.banners = S.banners.filter((x) => x.id !== s.id); dirty(); }, 180);
+    } else {
+      if (el) { el.style.transition = 'transform 0.2s ease-out, opacity 0.2s ease-out'; el.style.transform = ''; el.style.opacity = ''; }
+      dirty();
+    }
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', end);
+  window.addEventListener('pointercancel', end);
 }
 
 function renderTitle() {
